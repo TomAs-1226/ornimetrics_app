@@ -17,6 +17,13 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert'; // provides both json and base64
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'services/notifications_service.dart';
+import 'services/weather_provider.dart';
+import 'screens/environment_screen.dart';
+import 'screens/community_center_screen.dart';
+import 'screens/notification_center_screen.dart';
 
 
 // Global theme mode notifier
@@ -145,6 +152,8 @@ void main() async {
   final interval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
   autoRefreshIntervalNotifier.value = interval;
 
+  await NotificationsService.instance.load();
+
   runApp(const WildlifeApp());
 }
 
@@ -259,6 +268,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
     await prefs.setString('pref_last_cleaned', now.toIso8601String());
+    await NotificationsService.instance.markCleaned();
     setState(() {
       _lastCleaned = now;
       _daysSinceClean = 0;
@@ -311,6 +321,60 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildNotificationCard() {
+    final service = NotificationsService.instance;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.notifications_active_outlined),
+                const SizedBox(width: 8),
+                Text('Feeder notifications', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
+                  },
+                  child: const Text('Open settings'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Configure low food, clog, and cleaning reminders. Simulate alerts to verify without hardware.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: service.simulateLowFood,
+                  icon: const Icon(Icons.warning_amber_outlined),
+                  label: const Text('Low food'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: service.simulateClogged,
+                  icon: const Icon(Icons.block),
+                  label: const Text('Clogged'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: service.triggerCleaningCheck,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text('Cleaning due'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.removeListener(_updateFabVisibility);
@@ -330,6 +394,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   bool _isLoading = true;
   String _error = '';
   DateTime? _lastUpdated;
+  bool _useMockWeather = true;
+  WeatherProvider _weatherProvider = MockWeatherProvider();
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -369,6 +435,29 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     await prefs.setInt('pref_ai_photo_limit', _aiPhotoLimit);
   }
 
+  Future<void> _loadWeatherPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final useMock = prefs.getBool('pref_weather_use_mock') ?? true;
+    setState(() {
+      _useMockWeather = useMock;
+      _weatherProvider = useMock
+          ? MockWeatherProvider()
+          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+    });
+  }
+
+  Future<void> _toggleWeatherProvider() async {
+    final next = !_useMockWeather;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pref_weather_use_mock', next);
+    setState(() {
+      _useMockWeather = next;
+      _weatherProvider = next
+          ? MockWeatherProvider()
+          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -382,6 +471,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
+    _loadWeatherPrefs();
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
@@ -837,7 +927,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text(
@@ -851,9 +941,12 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
               Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Environment'),
+              Tab(icon: Icon(Icons.groups_2_outlined), text: 'Community'),
             ],
           ),
         ),
@@ -861,6 +954,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           children: [
             _buildDashboardTab(),
             _buildRecentDetectionsTab(),
+            _buildEnvironmentTab(),
+            const CommunityCenterScreen(),
           ],
         ),
         floatingActionButton: _showFab
@@ -923,6 +1018,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                             )
                           : const SizedBox.shrink(key: ValueKey('maint-banner-empty')),
                     ),
+                    _buildNotificationCard(),
+                    const SizedBox(height: 16),
                     _buildSummaryCards(),
                     const SizedBox(height: 24),
                     const Text(
@@ -936,8 +1033,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     const SizedBox(height: 16),
                     _buildHourlyActivityCard(),
                     const SizedBox(height: 24),
-                    _buildTasksCard(),
-                    const SizedBox(height: 24),
+            _buildTasksCard(),
+            const SizedBox(height: 24),
                     _buildAiAnalysisCard(),
                   ],
                 ),
@@ -3021,6 +3118,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       ),
     );
   }
+
+  Widget _buildEnvironmentTab() {
+    return EnvironmentScreen(
+      provider: _weatherProvider,
+      onSwapProvider: _toggleWeatherProvider,
+    );
+  }
 // ───────── Navigation to subscreens ─────────
   void _navigateToTotalDetections() {
     Navigator.of(context).push(
@@ -3056,7 +3160,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   void _navigateToSettings() {
-    Navigator.of(context).push(
+    Navigator.of(context)
+        .push(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 400),
         pageBuilder: (_, animation, __) => const SettingsScreen(),
@@ -3066,7 +3171,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
-    );
+    )
+        .then((_) => _loadWeatherPrefs());
   }
 }
 
@@ -3728,6 +3834,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoRefreshEnabled = false;
   double _autoRefreshInterval = 60.0; // seconds
   String _selectedAiModel = 'gpt-4o-mini';
+  bool _useMockWeather = true;
 
   bool get _darkMode => themeNotifier.value == ThemeMode.dark;
 
@@ -3746,6 +3853,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoRefreshEnabled = prefs.getBool('pref_auto_refresh_enabled') ?? false;
       _autoRefreshInterval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
       _selectedAiModel = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+      _useMockWeather = prefs.getBool('pref_weather_use_mock') ?? true;
     });
   }
 
@@ -3840,6 +3948,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await prefs.setString('pref_ai_model', val);
               },
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('Feeder notifications'),
+            subtitle: const Text('Configure alerts + simulate issues'),
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
+            },
+            trailing: const Icon(Icons.chevron_right),
+          ),
+          SwitchListTile(
+            title: const Text('Use mock weather provider'),
+            subtitle: const Text('Disable when a real API key is configured'),
+            value: _useMockWeather,
+            onChanged: (val) async {
+              safeLightHaptic();
+              setState(() => _useMockWeather = val);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('pref_weather_use_mock', val);
+            },
           ),
           const Divider(),
           ListTile(
