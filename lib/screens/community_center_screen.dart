@@ -32,6 +32,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   WeatherSnapshot? _weather;
   bool _loadingWeather = false;
   final AiProvider _ai = RealAiProvider();
+  String _aiModel = 'gpt-4o-mini';
   bool _tagFoodLow = false;
   bool _tagClogged = false;
   bool _tagCleaningDue = false;
@@ -49,8 +50,10 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getBool('pref_community_test') ?? true;
+    final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
     setState(() => _testMode = saved);
     _service.testMode = saved;
+    setState(() => _aiModel = model);
   }
 
   Future<void> _refresh() async {
@@ -159,7 +162,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   Future<void> _askAiGeneral() async {
     final messages = <AiMessage>[AiMessage('user', 'Any tips for my feeder community?')];
-    final reply = await _ai.send(messages, context: {'weather': _weather?.condition ?? 'n/a', 'sensors': 'n/a'});
+    final reply = await _ai.send(
+      messages,
+      modelOverride: _aiModel,
+      context: {
+        'weather': _weather?.condition ?? 'n/a',
+        'sensors': 'n/a',
+      },
+    );
     if (!mounted) return;
     showDialog(
       context: context,
@@ -507,13 +517,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                       runSpacing: 6,
                       children: [
                         TextButton.icon(
-                          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+                          onPressed: () => Navigator.of(context)
+                              .push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p, aiModel: _aiModel))),
                           icon: const Icon(Icons.chat_bubble_outline),
                           label: const Text('Open thread'),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => Navigator.of(context)
-                              .push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+                              .push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p, aiModel: _aiModel))),
                           icon: const Icon(Icons.auto_awesome),
                           label: const Text('Ask AI'),
                         ),

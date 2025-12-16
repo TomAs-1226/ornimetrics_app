@@ -5,15 +5,16 @@ import '../models/community_models.dart';
 import '../services/ai_provider.dart';
 
 class CommunityPostDetail extends StatefulWidget {
-  const CommunityPostDetail({super.key, required this.post});
+  const CommunityPostDetail({super.key, required this.post, this.aiModel = 'gpt-4o-mini'});
   final CommunityPost post;
+  final String aiModel;
 
   @override
   State<CommunityPostDetail> createState() => _CommunityPostDetailState();
 }
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
-  final AiProvider _ai = RealAiProvider();
+  late final AiProvider _ai = RealAiProvider(model: widget.aiModel);
   final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
@@ -41,7 +42,11 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
     };
     AiMessage aiReply;
     try {
-      aiReply = await _ai.send(List.from(_messages), context: contextMap);
+      aiReply = await _ai.send(
+        List.from(_messages),
+        context: contextMap,
+        modelOverride: widget.aiModel,
+      );
     } catch (e) {
       aiReply = AiMessage('ai', 'AI unavailable right now ($e). Please try again soon.');
     }

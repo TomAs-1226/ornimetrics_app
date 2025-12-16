@@ -1109,7 +1109,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
           ],
           bottom: const TabBar(
-            isScrollable: false,
+            isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
               Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
@@ -3457,8 +3457,10 @@ class _PhotoTileState extends State<_PhotoTile> {
                     colors: [Color(0xAA000000), Color(0x00000000)],
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.end,
                   children: [
                     if (p.weatherAtCapture != null)
                       Container(
@@ -3468,19 +3470,27 @@ class _PhotoTileState extends State<_PhotoTile> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.thermostat, size: 16, color: Colors.white),
                             const SizedBox(width: 4),
-                            Text(
-                              '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
-                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            Flexible(
+                              child: Text(
+                                '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    const Spacer(),
                     if ((p.species ?? '').isNotEmpty)
-                      Expanded(
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         child: Text(
                           p.species!,
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
@@ -3488,10 +3498,16 @@ class _PhotoTileState extends State<_PhotoTile> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    const SizedBox(width: 8),
-                    Text(
-                      DateFormat('MMM d, hh:mm a').format(p.timestamp),
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        DateFormat('MMM d, hh:mm a').format(p.timestamp),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
                     ),
                   ],
                 ),
@@ -4209,17 +4225,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // QoL: AI model selector
           ListTile(
             title: const Text('Preferred AI model'),
-            subtitle: DropdownButton<String>(
-              value: _selectedAiModel,
-              isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
-                DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
-              ],
-              onChanged: (val) async {
-                if (val == null) return;
-                safeLightHaptic();
-                setState(() => _selectedAiModel = val);
+              subtitle: DropdownButton<String>(
+                value: _selectedAiModel,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
+                  DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
+                  DropdownMenuItem(value: 'gpt-5.1', child: Text('GPT 5.1')),
+                  DropdownMenuItem(value: 'gpt-5.2', child: Text('GPT 5.2')),
+                ],
+                onChanged: (val) async {
+                  if (val == null) return;
+                  safeLightHaptic();
+                  setState(() => _selectedAiModel = val);
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString('pref_ai_model', val);
               },
