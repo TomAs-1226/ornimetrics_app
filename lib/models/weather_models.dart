@@ -9,6 +9,11 @@ class WeatherSnapshot {
   final double? visibilityKm;
   final double? dewPointC;
   final DateTime fetchedAt;
+  final bool isRaining;
+  final bool isSnowing;
+  final bool isHailing;
+  final double? feelsLikeC;
+  final double? precipitationMm;
 
   WeatherSnapshot({
     required this.condition,
@@ -21,5 +26,12 @@ class WeatherSnapshot {
     this.visibilityKm,
     this.dewPointC,
     required this.fetchedAt,
+    this.isRaining = false,
+    this.isSnowing = false,
+    this.isHailing = false,
+    this.feelsLikeC,
+    this.precipitationMm,
   });
+
+  bool get isWet => isRaining || isSnowing || isHailing || (precipitationChance ?? 0) >= 0.35;
 }

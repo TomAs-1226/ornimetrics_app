@@ -4,21 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
-class CommunityPost {
-  final String id;
-  final String author;
-  final String caption;
-  final String? imageUrl;
-  final DateTime createdAt;
-
-  CommunityPost({
-    required this.id,
-    required this.author,
-    required this.caption,
-    required this.createdAt,
-    this.imageUrl,
-  });
-}
+import '../models/community_models.dart';
+import '../models/weather_models.dart';
 
 class CommunityService {
   CommunityService({this.testMode = true});
@@ -49,19 +36,17 @@ class CommunityService {
       return List<CommunityPost>.from(_localPosts.reversed);
     }
     final snap = await _collection.orderBy('created_at', descending: true).limit(50).get();
-    return snap.docs.map((d) {
-      final data = d.data();
-      return CommunityPost(
-        id: d.id,
-        author: data['author']?.toString() ?? 'anon',
-        caption: data['caption']?.toString() ?? '',
-        imageUrl: data['image_url']?.toString(),
-        createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      );
-    }).toList();
+    return snap.docs.map((d) => CommunityPost.fromFirestore(d)).toList();
   }
 
-  Future<void> createPost({required String caption, File? photo, required String author}) async {
+  Future<void> createPost({
+    required String caption,
+    File? photo,
+    required String author,
+    required SensorSnapshot sensors,
+    WeatherSnapshot? weather,
+    String model = 'Ornimetrics O1 feeder',
+  }) async {
     if (testMode) {
       _localPosts.add(CommunityPost(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -69,6 +54,10 @@ class CommunityService {
         caption: caption,
         imageUrl: null,
         createdAt: DateTime.now(),
+        timeOfDayTag: _timeOfDayFor(DateTime.now()),
+        sensors: sensors,
+        model: model,
+        weather: weather,
       ));
       return;
     }
@@ -84,10 +73,26 @@ class CommunityService {
     }
 
     await _collection.add({
-      'author': author,
-      'caption': caption,
-      'image_url': uploadedUrl,
-      'created_at': FieldValue.serverTimestamp(),
+      ...CommunityPost(
+        id: 'pending',
+        author: author,
+        caption: caption,
+        imageUrl: uploadedUrl,
+        createdAt: DateTime.now(),
+        timeOfDayTag: _timeOfDayFor(DateTime.now()),
+        sensors: sensors,
+        model: model,
+        weather: weather,
+      ).toMap(),
     });
+  }
+
+  String _timeOfDayFor(DateTime dt) {
+    final hour = dt.hour;
+    if (hour < 6) return 'night';
+    if (hour < 12) return 'morning';
+    if (hour < 17) return 'afternoon';
+    if (hour < 21) return 'evening';
+    return 'night';
   }
 }

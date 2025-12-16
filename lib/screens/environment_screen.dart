@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/weather_models.dart';
+import '../services/maintenance_rules_engine.dart';
+import '../services/notifications_service.dart';
 import '../services/weather_provider.dart';
 
 class EnvironmentScreen extends StatefulWidget {
@@ -34,6 +36,10 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
     });
     try {
       final res = await widget.provider.fetchCurrent();
+      await MaintenanceRulesEngine.instance.applyWeather(
+        res,
+        NotificationsService.instance.preferences.value,
+      );
       setState(() => _data = res);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -204,6 +210,18 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
                   label: 'Dew point',
                   value: data.dewPointC != null ? '${data.dewPointC!.toStringAsFixed(1)}°C' : '—',
                 ),
+                if (data.feelsLikeC != null)
+                  _metricChip(
+                    icon: Icons.thermostat_auto,
+                    label: 'Feels like',
+                    value: '${data.feelsLikeC!.toStringAsFixed(1)}°C',
+                  ),
+                if (data.precipitationMm != null)
+                  _metricChip(
+                    icon: Icons.grain_outlined,
+                    label: 'Rain (hr)',
+                    value: '${data.precipitationMm!.toStringAsFixed(1)} mm',
+                  ),
                 _metricChip(
                   icon: Icons.access_time,
                   label: 'Updated',
@@ -220,7 +238,7 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
   Widget _metricChip({required IconData icon, required String label, required String value}) {
     final theme = Theme.of(context);
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 120, maxWidth: 180),
+      constraints: const BoxConstraints(minWidth: 120, maxWidth: 220),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(12),
@@ -244,7 +262,12 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                    value,
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             )
