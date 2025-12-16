@@ -107,7 +107,8 @@ class MaintenanceRulesEngine {
 
   bool _cooldownPassed(DateTime? last, double cooldownHours) {
     if (last == null) return true;
-    return DateTime.now().difference(last) >= Duration(hours: cooldownHours);
+    final millis = (cooldownHours * 3600000).round();
+    return DateTime.now().difference(last) >= Duration(milliseconds: millis);
   }
 
   double _usageThreshold(UsageSensitivity sensitivity) {
