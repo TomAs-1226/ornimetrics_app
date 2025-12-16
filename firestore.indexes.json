@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "community_posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "created_at", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "community_posts_test",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "created_at", "order": "DESCENDING"}
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

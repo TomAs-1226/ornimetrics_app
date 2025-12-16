@@ -6,7 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
+import '../models/community_models.dart';
 import '../services/community_service.dart';
+import '../services/ai_provider.dart';
+import '../services/weather_provider.dart';
+import '../models/weather_models.dart';
+import 'community_post_detail.dart';
 
 class CommunityCenterScreen extends StatefulWidget {
   const CommunityCenterScreen({super.key});
@@ -23,6 +28,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   List<CommunityPost> _posts = <CommunityPost>[];
   final _captionController = TextEditingController();
   File? _photo;
+  WeatherSnapshot? _weather;
+  bool _loadingWeather = false;
+  final _ai = MockAiProvider();
+  bool _tagFoodLow = false;
+  bool _tagClogged = false;
+  bool _tagCleaningDue = false;
+  final WeatherProvider _weatherProvider = MockWeatherProvider();
 
   @override
   void initState() {
@@ -30,6 +42,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     _service = CommunityService(testMode: _testMode);
     _loadPrefs();
     _refresh();
+    _refreshWeather();
   }
 
   Future<void> _loadPrefs() async {
@@ -45,6 +58,18 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
       setState(() => _posts = res);
     } catch (e) {
       setState(() => _status = e.toString());
+    }
+  }
+
+  Future<void> _refreshWeather() async {
+    setState(() => _loadingWeather = true);
+    try {
+      final res = await _weatherProvider.fetchCurrent();
+      setState(() => _weather = res);
+    } catch (e) {
+      setState(() => _status = 'Weather unavailable: $e');
+    } finally {
+      setState(() => _loadingWeather = false);
     }
   }
 
@@ -106,6 +131,8 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
         caption: _captionController.text.trim(),
         photo: _photo,
         author: (user?.email ?? 'test-user'),
+        sensors: SensorSnapshot(lowFood: _tagFoodLow, clogged: _tagClogged, cleaningDue: _tagCleaningDue),
+        weather: _weather,
       );
       _captionController.clear();
       _photo = null;
@@ -126,131 +153,41 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     await _refresh();
   }
 
+  Future<void> _askAiGeneral() async {
+    final messages = <AiMessage>[AiMessage('user', 'Any tips for my feeder community?')];
+    final reply = await _ai.send(messages, context: {'weather': _weather?.condition ?? 'n/a', 'sensors': 'n/a'});
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('AI says'),
+        content: Text(reply.content),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return RefreshIndicator(
-      onRefresh: _refresh,
+      onRefresh: () async {
+        await _refresh();
+        await _refreshWeather();
+      },
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.secondaryContainer]),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.forum_outlined, color: Colors.white, size: 36),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Community Center', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                      SizedBox(height: 4),
-                      Text('Forum-style threads for feeder life + bird photos', style: TextStyle(color: Colors.white70)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: _loginOrSignUp,
-                  icon: const Icon(Icons.login, color: Colors.white),
-                  tooltip: 'Sign in to post',
-                ),
-              ],
-            ),
-          ),
+          _header(),
           const SizedBox(height: 12),
-          Card(
-            child: SwitchListTile(
-              title: const Text('Community Test Mode'),
-              subtitle: const Text('Writes stay local/sandboxed so rules issues are safe.'),
-              value: _testMode,
-              onChanged: _toggleTestMode,
-              secondary: const Icon(Icons.science_outlined),
-            ),
-          ),
-          if (!_testMode)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.verified_user),
-                title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
-                subtitle: const Text('Email/password auth via Firebase'),
-                trailing: OutlinedButton.icon(onPressed: _loginOrSignUp, icon: const Icon(Icons.login), label: const Text('Login')),
-              ),
-            ),
+          _metaRow(user),
           const SizedBox(height: 12),
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.edit_outlined),
-                      SizedBox(width: 8),
-                      Text('Start a thread', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _captionController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'What did you notice?',
-                      hintText: 'Share behavior, questions, or a quick update',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _pickPhoto,
-                        icon: const Icon(Icons.photo_library_outlined),
-                        label: Text(_photo == null ? 'Add photo' : 'Change photo'),
-                      ),
-                      ActionChip(
-                        avatar: Icon(_testMode ? Icons.safety_check : Icons.cloud_done, color: Theme.of(context).colorScheme.primary),
-                        label: Text(_testMode ? 'Posting to sandbox' : 'Live collection'),
-                        onPressed: () => _toggleTestMode(!_testMode),
-                      ),
-                      if (_photo != null)
-                        Chip(label: Text(_photo!.path.split('/').last), avatar: const Icon(Icons.check_circle, size: 18)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _loading ? null : _createPost,
-                      icon: _loading
-                          ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.send),
-                      label: Text(_loading ? 'Posting...' : 'Publish'),
-                    ),
-                  ),
-                  if (_status.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(_status, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-                    )
-                ],
-              ),
-            ),
-          ),
+          _composer(),
           const SizedBox(height: 16),
           Row(
             children: const [
-              Icon(Icons.auto_awesome_outlined),
+              Icon(Icons.forum_outlined),
               SizedBox(width: 8),
-              Text('Forum feed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text('Forum threads', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ],
           ),
           const SizedBox(height: 8),
@@ -275,49 +212,245 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     );
   }
 
-  Widget _buildPostTile(CommunityPost p) {
+  Widget _header() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.secondary]),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.hub_outlined, color: Colors.white, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text('Community Center', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                SizedBox(height: 4),
+                Text('Forum vibes with weather-tagged posts + AI helper', style: TextStyle(color: Colors.white70)),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: _askAiGeneral,
+            icon: const Icon(Icons.auto_awesome, color: Colors.white),
+            tooltip: 'Ask AI',
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _metaRow(User? user) {
+    return Column(
+      children: [
+        Card(
+          child: SwitchListTile(
+            title: const Text('Community Test Mode'),
+            subtitle: const Text('Sandbox collection + emulator friendly'),
+            value: _testMode,
+            onChanged: _toggleTestMode,
+            secondary: const Icon(Icons.science_outlined),
+          ),
+        ),
+        if (!_testMode)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.verified_user),
+              title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
+              subtitle: const Text('Email/password auth via Firebase emulators by default'),
+              trailing: OutlinedButton.icon(onPressed: _loginOrSignUp, icon: const Icon(Icons.login), label: const Text('Login')),
+            ),
+          ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.cloud_queue),
+            title: const Text('Weather tag'),
+            subtitle: Text(_weather != null
+                ? '${_weather!.temperatureC.toStringAsFixed(1)}°C • ${_weather!.humidity.toStringAsFixed(0)}% • ${_weather!.condition}'
+                : _loadingWeather
+                    ? 'Loading weather...'
+                    : 'Mock weather used until API key ready'),
+            trailing: IconButton(onPressed: _refreshWeather, icon: const Icon(Icons.refresh)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _composer() {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                  child: Text(p.author.isNotEmpty ? p.author[0].toUpperCase() : '?'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(p.author, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text(DateFormat('MMM d, hh:mm a').format(p.createdAt.toLocal()),
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                Chip(
-                  label: Text(_testMode ? 'Test' : 'Live'),
-                  avatar: Icon(_testMode ? Icons.shield_outlined : Icons.public, size: 16),
-                ),
+              children: const [
+                Icon(Icons.edit_outlined),
+                SizedBox(width: 8),
+                Text('Start a thread', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
-            const SizedBox(height: 10),
-            Text(p.caption, style: const TextStyle(fontSize: 15)),
-            if (p.imageUrl != null) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _captionController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'What did you notice?',
+                hintText: 'Share behavior, questions, or a quick update',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _pickPhoto,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: Text(_photo == null ? 'Add photo' : 'Change photo'),
+                ),
+                ActionChip(
+                  avatar: Icon(_testMode ? Icons.safety_check : Icons.cloud_done, color: Theme.of(context).colorScheme.primary),
+                  label: Text(_testMode ? 'Posting to sandbox' : 'Live collection'),
+                  onPressed: () => _toggleTestMode(!_testMode),
+                ),
+                if (_photo != null)
+                  Chip(label: Text(_photo!.path.split('/').last), avatar: const Icon(Icons.check_circle, size: 18)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              children: [
+                FilterChip(
+                  label: const Text('Food low'),
+                  selected: _tagFoodLow,
+                  onSelected: (v) => setState(() => _tagFoodLow = v),
+                ),
+                FilterChip(
+                  label: const Text('Clogged'),
+                  selected: _tagClogged,
+                  onSelected: (v) => setState(() => _tagClogged = v),
+                ),
+                FilterChip(
+                  label: const Text('Cleaning due'),
+                  selected: _tagCleaningDue,
+                  onSelected: (v) => setState(() => _tagCleaningDue = v),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.devices_other),
+                  label: const Text('Model Ornimetrics O1'),
+                )
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _loading ? null : _createPost,
+                icon: _loading
+                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.send),
+                label: Text(_loading ? 'Posting...' : 'Publish'),
+              ),
+            ),
+            if (_status.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(_status, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
               )
-            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPostTile(CommunityPost p) {
+    return Hero(
+      tag: p.id,
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      child: Text(p.author.isNotEmpty ? p.author[0].toUpperCase() : '?'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p.author, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          Text(DateFormat('MMM d, hh:mm a').format(p.createdAt.toLocal()),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Chip(
+                      label: Text(_testMode ? 'Test' : 'Live'),
+                      avatar: Icon(_testMode ? Icons.shield_outlined : Icons.public, size: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(p.caption, style: const TextStyle(fontSize: 15)),
+                if (p.imageUrl != null) ...[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
+                  )
+                ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip(Icons.access_time, p.timeOfDayTag),
+                    _chip(Icons.cloud_queue, p.weather != null
+                        ? '${p.weather!.temperatureC.toStringAsFixed(1)}°C / ${p.weather!.humidity.toStringAsFixed(0)}%'
+                        : 'Weather n/a'),
+                    _chip(Icons.restaurant, p.sensors.lowFood ? 'Food low' : 'Food ok'),
+                    _chip(Icons.block, p.sensors.clogged ? 'Clogged' : 'Clear'),
+                    _chip(Icons.cleaning_services, p.sensors.cleaningDue ? 'Clean soon' : 'Fresh'),
+                    _chip(Icons.devices_other, p.model),
+                  ],
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+                    icon: const Icon(Icons.question_answer_outlined),
+                    label: const Text('Ask AI about this post'),
+                  ),
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(IconData icon, String label) {
+    return Chip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
     );
   }
 }

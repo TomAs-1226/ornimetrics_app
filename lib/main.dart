@@ -18,6 +18,9 @@ import 'dart:async';
 import 'dart:convert'; // provides both json and base64
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
 
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
@@ -160,6 +163,16 @@ void safeSelectionHaptic() {
   }
 }
 
+const bool kUseEmulatorsByDefault = true;
+
+Future<void> _configureFirebaseEmulators() async {
+  final host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+  FirebaseStorage.instance.useStorageEmulator(host, 9199);
+  FirebaseAuth.instance.useAuthEmulator(host, 9099);
+  FirebaseDatabase.instance.useDatabaseEmulator(host, 9000);
+}
+
 Widget envPill(BuildContext context, {required IconData icon, required String label}) {
   final theme = Theme.of(context);
   return Container(
@@ -189,6 +202,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (kDebugMode && kUseEmulatorsByDefault) {
+    await _configureFirebaseEmulators();
+  }
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();
@@ -4051,6 +4067,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _colorChip('Ocean', Colors.teal),
                 _colorChip('Lavender', Colors.deepPurple),
                 _colorChip('Rose', Colors.pinkAccent),
+                _colorChip('Sky', Colors.blueAccent),
+                _colorChip('Graphite', Colors.blueGrey),
               ],
             ),
           ),

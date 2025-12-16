@@ -244,7 +244,12 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                    value,
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             )
