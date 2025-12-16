@@ -205,15 +205,26 @@ Widget envPill(BuildContext context, {required IconData icon, required String la
   );
 }
 
+Future<FirebaseApp> _ensureFirebaseInitialized() async {
+  try {
+    if (Firebase.apps.isNotEmpty) {
+      return Firebase.apps.first;
+    }
+    return await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
+      return Firebase.app();
+    }
+    rethrow;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
-  // Avoid duplicate initialization when hot-restarting or when a native default
-  // app was already started by plugins. We only initialize if no Firebase app
-  // exists to prevent the "[DEFAULT] already exists" crash seen on startup.
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  }
+  await _ensureFirebaseInitialized();
   if (kDebugMode && kUseEmulatorsByDefault) {
     await _configureFirebaseEmulators();
   }
