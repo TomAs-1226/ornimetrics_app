@@ -17,10 +17,24 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert'; // provides both json and base64
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+
+import 'services/notifications_service.dart';
+import 'services/maintenance_rules_engine.dart';
+import 'services/food_level_provider.dart';
+import 'services/weather_provider.dart';
+import 'screens/environment_screen.dart';
+import 'screens/community_center_screen.dart';
+import 'screens/notification_center_screen.dart';
+import 'models/weather_models.dart';
 
 
 // Global theme mode notifier
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+final ValueNotifier<Color> seedColorNotifier = ValueNotifier(Colors.green);
 
 // Global haptics toggle notifier
 final ValueNotifier<bool> hapticsEnabledNotifier = ValueNotifier(true);
@@ -36,8 +50,9 @@ class DetectionPhoto {
   final String url;
   final DateTime timestamp;
   final String? species;
+  final WeatherSnapshot? weatherAtCapture;
 
-  DetectionPhoto({required this.url, required this.timestamp, this.species});
+  DetectionPhoto({required this.url, required this.timestamp, this.species, this.weatherAtCapture});
 
   static DateTime _parseTs(dynamic v) {
     if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
@@ -59,6 +74,34 @@ class DetectionPhoto {
       url: (m['image_url'] ?? m['url'] ?? '').toString(),
       timestamp: _parseTs(m['timestamp']),
       species: m['species']?.toString(),
+      weatherAtCapture: m['weather'] is Map
+          ? WeatherSnapshot(
+              condition: m['weather']['condition']?.toString() ?? 'Unknown',
+              temperatureC: (m['weather']['temperatureC'] as num?)?.toDouble() ?? 0,
+              humidity: (m['weather']['humidity'] as num?)?.toDouble() ?? 0,
+              precipitationChance: (m['weather']['precipitationChance'] as num?)?.toDouble(),
+              windKph: (m['weather']['windKph'] as num?)?.toDouble(),
+              pressureMb: (m['weather']['pressureMb'] as num?)?.toDouble(),
+              uvIndex: (m['weather']['uvIndex'] as num?)?.toDouble(),
+              visibilityKm: (m['weather']['visibilityKm'] as num?)?.toDouble(),
+              dewPointC: (m['weather']['dewPointC'] as num?)?.toDouble(),
+              fetchedAt: _parseTs(m['weather']['fetchedAt']),
+              isRaining: m['weather']['isRaining'] == true,
+              isSnowing: m['weather']['isSnowing'] == true,
+              isHailing: m['weather']['isHailing'] == true,
+              feelsLikeC: (m['weather']['feelsLikeC'] as num?)?.toDouble(),
+              precipitationMm: (m['weather']['precipitationMm'] as num?)?.toDouble(),
+            )
+          : null,
+    );
+  }
+
+  DetectionPhoto withWeather(WeatherSnapshot snapshot) {
+    return DetectionPhoto(
+      url: url,
+      timestamp: timestamp,
+      species: species,
+      weatherAtCapture: snapshot,
     );
   }
 }
@@ -127,10 +170,98 @@ void safeSelectionHaptic() {
   }
 }
 
+const bool kUseEmulatorsByDefault = false;
+
+Future<bool> _isPortOpen(String host, int port) async {
+  try {
+    final socket = await Socket.connect(host, port, timeout: const Duration(milliseconds: 400));
+    socket.destroy();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<bool> _configureFirebaseEmulators() async {
+  final host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+  final ports = [8080, 9199, 9099, 9000];
+  final checks = await Future.wait(ports.map((p) => _isPortOpen(host, p)));
+  if (checks.contains(false)) {
+    debugPrint('[firebase] Emulators not reachable on $host; using production backends.');
+    return false;
+  }
+
+  final db = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
+  );
+
+  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+  FirebaseStorage.instance.useStorageEmulator(host, 9199);
+  FirebaseAuth.instance.useAuthEmulator(host, 9099);
+  db.useDatabaseEmulator(host, 9000);
+  debugPrint('[firebase] Emulators configured for $host.');
+  return true;
+}
+
+FirebaseDatabase primaryDatabase() {
+  return FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
+  );
+}
+
+Widget envPill(BuildContext context, {required IconData icon, required String label}) {
+  final theme = Theme.of(context);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.primaryContainer.withOpacity(0.8),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: theme.colorScheme.onPrimaryContainer),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onPrimaryContainer,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<FirebaseApp> _ensureFirebaseInitialized() async {
+  try {
+    if (Firebase.apps.isNotEmpty) {
+      return Firebase.apps.first;
+    }
+    return await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
+      return Firebase.app();
+    }
+    rethrow;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _ensureFirebaseInitialized();
+  final envWantsEmulators = dotenv.env['USE_EMULATORS']?.toLowerCase() == 'true';
+  if (kDebugMode && envWantsEmulators) {
+    await _configureFirebaseEmulators();
+  } else {
+    debugPrint('[firebase] Using production backends for realtime database and firestore.');
+  }
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();
@@ -138,12 +269,22 @@ void main() async {
   themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
   final isHaptic = prefs.getBool('pref_haptics_enabled') ?? true;
   hapticsEnabledNotifier.value = isHaptic;
+  final seedValue = prefs.getInt('pref_seed_color');
+  if (seedValue != null) {
+    seedColorNotifier.value = Color(seedValue);
+  }
 
   // Load saved auto-refresh preferences
   final isAuto = prefs.getBool('pref_auto_refresh_enabled') ?? false;
   autoRefreshEnabledNotifier.value = isAuto;
   final interval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
   autoRefreshIntervalNotifier.value = interval;
+
+  await NotificationsService.instance.load();
+  await MaintenanceRulesEngine.instance.load();
+  if (kDebugMode) {
+    await NotificationsService.instance.startFoodLevelTracking(MockFoodLevelProvider());
+  }
 
   runApp(const WildlifeApp());
 }
@@ -153,37 +294,42 @@ class WildlifeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeNotifier,
-      builder: (_, mode, __) {
-        return MaterialApp(
-          title: 'Ornimetrics Tracker',
-          debugShowCheckedModeBanner: false,
-          themeMode: mode,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.green, brightness: Brightness.light),
-            useMaterial3: true,
-            textTheme: Typography.material2021(platform: TargetPlatform.android).black,
-            scaffoldBackgroundColor: const Color(0xFFF4F7F6),
-            cardTheme: CardThemeData(
-              elevation: 1,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            appBarTheme: const AppBarTheme(),
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.green, brightness: Brightness.dark),
-            useMaterial3: true,
-            textTheme: Typography.material2021(platform: TargetPlatform.android).white,
-            scaffoldBackgroundColor: const Color(0xFF121212),
-            cardTheme: const CardThemeData(
-              elevation: 1,
-              // Border radius looks good in dark as well
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-            ),
-            appBarTheme: const AppBarTheme(),
-          ),
-          home: const WildlifeTrackerScreen(),
+    return ValueListenableBuilder<Color>(
+      valueListenable: seedColorNotifier,
+      builder: (_, seed, __) {
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeNotifier,
+          builder: (_, mode, __) {
+            return MaterialApp(
+              title: 'Ornimetrics Tracker',
+              debugShowCheckedModeBanner: false,
+              themeMode: mode,
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
+                useMaterial3: true,
+                textTheme: Typography.material2021(platform: TargetPlatform.android).black,
+                scaffoldBackgroundColor: const Color(0xFFF4F7F6),
+                cardTheme: CardThemeData(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                appBarTheme: const AppBarTheme(),
+              ),
+              darkTheme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+                useMaterial3: true,
+                textTheme: Typography.material2021(platform: TargetPlatform.android).white,
+                scaffoldBackgroundColor: const Color(0xFF121212),
+                cardTheme: const CardThemeData(
+                  elevation: 1,
+                  // Border radius looks good in dark as well
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                ),
+                appBarTheme: const AppBarTheme(),
+              ),
+              home: const WildlifeTrackerScreen(),
+            );
+          },
         );
       },
     );
@@ -259,6 +405,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
     await prefs.setString('pref_last_cleaned', now.toIso8601String());
+    await NotificationsService.instance.markCleaned();
     setState(() {
       _lastCleaned = now;
       _daysSinceClean = 0;
@@ -311,6 +458,60 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildNotificationCard() {
+    final service = NotificationsService.instance;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.notifications_active_outlined),
+                const SizedBox(width: 8),
+                Text('Feeder notifications', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
+                  },
+                  child: const Text('Open settings'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Configure low food, clog, and cleaning reminders. Simulate alerts to verify without hardware.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: service.simulateLowFood,
+                  icon: const Icon(Icons.warning_amber_outlined),
+                  label: const Text('Low food'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: service.simulateClogged,
+                  icon: const Icon(Icons.block),
+                  label: const Text('Clogged'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: service.triggerCleaningCheck,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text('Cleaning due'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.removeListener(_updateFabVisibility);
@@ -330,6 +531,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   bool _isLoading = true;
   String _error = '';
   DateTime? _lastUpdated;
+  int _lastUsageCount = 0;
+  DateTime? _lastUsageSampleAt;
+  bool _useMockWeather = true;
+  WeatherProvider _weatherProvider = MockWeatherProvider();
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -369,6 +574,29 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     await prefs.setInt('pref_ai_photo_limit', _aiPhotoLimit);
   }
 
+  Future<void> _loadWeatherPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final useMock = prefs.getBool('pref_weather_use_mock') ?? true;
+    setState(() {
+      _useMockWeather = useMock;
+      _weatherProvider = useMock
+          ? MockWeatherProvider()
+          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+    });
+  }
+
+  Future<void> _toggleWeatherProvider() async {
+    final next = !_useMockWeather;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pref_weather_use_mock', next);
+    setState(() {
+      _useMockWeather = next;
+      _weatherProvider = next
+          ? MockWeatherProvider()
+          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -382,6 +610,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
+    _loadWeatherPrefs();
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
@@ -431,7 +660,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
   // Tries a specific summary path and returns the snapshot if it exists and is a Map
   Future<DataSnapshot?> _trySummaryAtPath(String path) async {
-    final snap = await FirebaseDatabase.instance.ref(path).get();
+    final snap = await primaryDatabase().ref(path).get();
     if (snap.exists && snap.value is Map) return snap;
     return null;
   }
@@ -450,7 +679,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
   // Read a summary at a given path and return counts, or null if not present
   Future<Map<String, double>?> _readSummaryCounts(String path) async {
-    final snap = await FirebaseDatabase.instance.ref(path).get();
+    final snap = await primaryDatabase().ref(path).get();
     if (snap.exists && snap.value is Map) {
       return _toCountsFromValue(snap.value);
     }
@@ -473,7 +702,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     if (direct != null) _mergeCountsInPlace(out, direct);
 
     // b) Summaries under any mid-level keys
-    final dateNode = await FirebaseDatabase.instance.ref('detections/$date').get();
+    final dateNode = await primaryDatabase().ref('detections/$date').get();
     if (dateNode.exists && dateNode.value is Map) {
       final m = Map<dynamic, dynamic>.from(dateNode.value as Map);
       for (final k in m.keys) {
@@ -489,7 +718,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
   Future<void> _fetchTodaySummaryFlexible({String sessionKey = 'session_1'}) async {
     try {
-      final db = FirebaseDatabase.instance.ref();
+      final db = primaryDatabase().ref();
 
       final String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       String usedDate = today;
@@ -513,6 +742,17 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       }
 
       final int total = species.values.fold<int>(0, (acc, d) => acc + d.toInt());
+
+      final now = DateTime.now();
+      final delta = (_lastUsageSampleAt == null) ? total : (total - _lastUsageCount).clamp(0, total);
+      final duration = _lastUsageSampleAt == null ? const Duration(minutes: 60) : now.difference(_lastUsageSampleAt!);
+      _lastUsageCount = total;
+      _lastUsageSampleAt = now;
+      unawaited(MaintenanceRulesEngine.instance.applyUsage(
+        dispenseEvents: delta,
+        activeDuration: duration,
+        prefs: NotificationsService.instance.preferences.value,
+      ));
 
       if (!mounted) return;
       setState(() {
@@ -544,7 +784,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchPhotoSnapshots() async {
-    final ref = FirebaseDatabase.instance.ref(kPhotoFeedPath);
+    final ref = primaryDatabase().ref(kPhotoFeedPath);
     try {
       DataSnapshot snap;
 
@@ -594,6 +834,23 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       // Always sort newest first (covers fallback path too)
       items.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
+      WeatherSnapshot? weatherTag;
+      try {
+        weatherTag = await _weatherProvider.fetchCurrent();
+        await MaintenanceRulesEngine.instance.applyWeather(
+          weatherTag,
+          NotificationsService.instance.preferences.value,
+        );
+      } catch (_) {
+        // keep null if provider fails; UI will remain graceful
+      }
+
+      if (weatherTag != null) {
+        for (var i = 0; i < items.length; i++) {
+          items[i] = items[i].withWeather(weatherTag);
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _photos = items;
@@ -612,7 +869,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchDetectionData() async {
-    final dbRef = FirebaseDatabase.instance.ref('detections/2025-07-26/session_1/summary');
+    final dbRef = primaryDatabase().ref('detections/2025-07-26/session_1/summary');
 
     try {
       final snapshot = await dbRef.get();
@@ -837,13 +1094,14 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text(
             'Ornimetrics Tracker',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
+          centerTitle: true,
           actions: [
             IconButton(
               icon: const Icon(Icons.settings),
@@ -851,9 +1109,12 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
           ],
           bottom: const TabBar(
+            isScrollable: false,
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
               Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Environment'),
+              Tab(icon: Icon(Icons.groups_2_outlined), text: 'Community'),
             ],
           ),
         ),
@@ -861,6 +1122,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           children: [
             _buildDashboardTab(),
             _buildRecentDetectionsTab(),
+            _buildEnvironmentTab(),
+            const CommunityCenterScreen(),
           ],
         ),
         floatingActionButton: _showFab
@@ -923,6 +1186,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                             )
                           : const SizedBox.shrink(key: ValueKey('maint-banner-empty')),
                     ),
+                    _buildNotificationCard(),
+                    const SizedBox(height: 16),
                     _buildSummaryCards(),
                     const SizedBox(height: 24),
                     const Text(
@@ -936,8 +1201,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     const SizedBox(height: 16),
                     _buildHourlyActivityCard(),
                     const SizedBox(height: 24),
-                    _buildTasksCard(),
-                    const SizedBox(height: 24),
+            _buildTasksCard(),
+            const SizedBox(height: 24),
                     _buildAiAnalysisCard(),
                   ],
                 ),
@@ -3021,6 +3286,14 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       ),
     );
   }
+
+  Widget _buildEnvironmentTab() {
+    return EnvironmentScreen(
+      provider: _weatherProvider,
+      onSwapProvider: _toggleWeatherProvider,
+    );
+  }
+
 // ───────── Navigation to subscreens ─────────
   void _navigateToTotalDetections() {
     Navigator.of(context).push(
@@ -3056,7 +3329,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   void _navigateToSettings() {
-    Navigator.of(context).push(
+    Navigator.of(context)
+        .push(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 400),
         pageBuilder: (_, animation, __) => const SettingsScreen(),
@@ -3066,7 +3340,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
-    );
+    )
+        .then((_) => _loadWeatherPrefs());
   }
 }
 
@@ -3185,6 +3460,25 @@ class _PhotoTileState extends State<_PhotoTile> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    if (p.weatherAtCapture != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.thermostat, size: 16, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Spacer(),
                     if ((p.species ?? '').isNotEmpty)
                       Expanded(
                         child: Text(
@@ -3267,14 +3561,18 @@ class _RecentPhotoViewerState extends State<RecentPhotoViewer> {
           );
         },
       ),
-      bottomNavigationBar: (p.species ?? '').isNotEmpty
-          ? Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black26)],
-              ),
-              child: Row(
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black26)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if ((p.species ?? '').isNotEmpty)
+              Row(
                 children: [
                   const Icon(Icons.pets),
                   const SizedBox(width: 8),
@@ -3287,8 +3585,40 @@ class _RecentPhotoViewerState extends State<RecentPhotoViewer> {
                   ),
                 ],
               ),
-            )
-          : null,
+            if (p.weatherAtCapture != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  envPill(
+                    context,
+                    icon: Icons.thermostat,
+                    label: '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.condition}',
+                  ),
+                  envPill(
+                    context,
+                    icon: Icons.water_drop_outlined,
+                    label: '${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
+                  ),
+                  if (p.weatherAtCapture!.windKph != null)
+                    envPill(
+                      context,
+                      icon: Icons.air,
+                      label: '${p.weatherAtCapture!.windKph!.toStringAsFixed(0)} kph wind',
+                    ),
+                  if (p.weatherAtCapture!.uvIndex != null)
+                    envPill(
+                      context,
+                      icon: Icons.wb_sunny_outlined,
+                      label: 'UV ${p.weatherAtCapture!.uvIndex!.toStringAsFixed(1)}',
+                    ),
+                ],
+              ),
+            ]
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3302,7 +3632,7 @@ class _RecentPhotoViewerState extends State<RecentPhotoViewer> {
 /// Returns newest-first list of DetectionPhoto. Safe to call from anywhere.
 Future<List<DetectionPhoto>> fetchRecentPhotosFlexible({int limit = 50}) async {
   try {
-    final db = FirebaseDatabase.instance.ref();
+    final db = primaryDatabase().ref();
     final snap = await db
         .child('photo_snapshots')
         .orderByChild('timestamp')
@@ -3728,6 +4058,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoRefreshEnabled = false;
   double _autoRefreshInterval = 60.0; // seconds
   String _selectedAiModel = 'gpt-4o-mini';
+  bool _useMockWeather = true;
+  Color _seedColor = Colors.green;
 
   bool get _darkMode => themeNotifier.value == ThemeMode.dark;
 
@@ -3746,7 +4078,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoRefreshEnabled = prefs.getBool('pref_auto_refresh_enabled') ?? false;
       _autoRefreshInterval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
       _selectedAiModel = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+      _useMockWeather = prefs.getBool('pref_weather_use_mock') ?? true;
+      final seedValue = prefs.getInt('pref_seed_color');
+      if (seedValue != null) {
+        _seedColor = Color(seedValue);
+        seedColorNotifier.value = _seedColor;
+      }
     });
+  }
+
+  Widget _colorChip(String label, Color color) {
+    final isSelected = _seedColor.value == color.value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: color.withOpacity(0.15),
+      avatar: CircleAvatar(backgroundColor: color, radius: 6),
+      onSelected: (_) async {
+        safeLightHaptic();
+        setState(() => _seedColor = color);
+        seedColorNotifier.value = color;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('pref_seed_color', color.value);
+      },
+    );
   }
 
   @override
@@ -3767,6 +4122,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await prefs.setBool('pref_dark_mode', val);
             },
           ),
+          ListTile(
+            title: const Text('Accent tint'),
+            subtitle: const Text('Keep visuals lively with themed card tints'),
+            trailing: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: _seedColor,
+                shape: BoxShape.circle,
+                boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                _colorChip('Emerald', Colors.green),
+                _colorChip('Citrus', Colors.orange),
+                _colorChip('Ocean', Colors.teal),
+                _colorChip('Lavender', Colors.deepPurple),
+                _colorChip('Rose', Colors.pinkAccent),
+                _colorChip('Sky', Colors.blueAccent),
+                _colorChip('Graphite', Colors.blueGrey),
+              ],
+            ),
+          ),
+          const Divider(),
           SwitchListTile(
             title: const Text('Enable haptic feedback'),
             value: _hapticsEnabled,
@@ -3840,6 +4224,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await prefs.setString('pref_ai_model', val);
               },
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('Feeder notifications'),
+            subtitle: const Text('Configure alerts + simulate issues'),
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
+            },
+            trailing: const Icon(Icons.chevron_right),
+          ),
+          SwitchListTile(
+            title: const Text('Use mock weather provider'),
+            subtitle: const Text('Disable when a real API key is configured'),
+            value: _useMockWeather,
+            onChanged: (val) async {
+              safeLightHaptic();
+              setState(() => _useMockWeather = val);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('pref_weather_use_mock', val);
+            },
           ),
           const Divider(),
           ListTile(
