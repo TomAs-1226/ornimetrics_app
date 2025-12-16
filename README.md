@@ -7,6 +7,7 @@ Modernized feeder assistant with notifications, environment context, and a commu
 - (Optional for deploy) Run `firebase login` once.
 - For local development, start the emulators (Auth/Firestore/Storage/RTDB/UI) with `firebase emulators:start` in another terminal; the app defaults to emulator hosts in debug and runs fully without console setup.
 - Launch the app: `flutter run` (emulator/test mode works immediately).
+- A stub `android/app/google-services.json` is checked in for emulator builds; the bootstrap script regenerates it for a real project when you're ready.
 
 ### Optional: one-command Firebase bootstrap
 After logging in, you can prime a real project (rules + indexes + storage) with:
