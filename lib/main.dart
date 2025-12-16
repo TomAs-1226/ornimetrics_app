@@ -1110,6 +1110,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           ],
           bottom: const TabBar(
             isScrollable: true,
+            labelPadding: EdgeInsets.symmetric(horizontal: 16),
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
               Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
@@ -3469,17 +3470,16 @@ class _PhotoTileState extends State<_PhotoTile> {
                           color: Colors.black54,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                        child: Wrap(
+                          spacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             const Icon(Icons.thermostat, size: 16, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            Text(
+                              '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: true,
                             ),
                           ],
                         ),

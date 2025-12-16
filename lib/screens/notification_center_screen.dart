@@ -175,20 +175,23 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   value: prefs.weatherBasedCleaningEnabled,
                   onChanged: (v) => _service.updatePrefs(prefs.copyWith(weatherBasedCleaningEnabled: v)),
                 ),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text('Weather sensitivity'),
-                    const SizedBox(width: 12),
                     ChoiceChip(
                       label: const Text('Normal'),
                       selected: prefs.weatherSensitivity == WeatherSensitivity.normal,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('High'),
                       selected: prefs.weatherSensitivity == WeatherSensitivity.high,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
                     ),
                   ],
                 ),
@@ -206,26 +209,29 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   value: prefs.heavyUseEnabled,
                   onChanged: (v) => _service.updatePrefs(prefs.copyWith(heavyUseEnabled: v)),
                 ),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text('Heavy-use sensitivity'),
-                    const SizedBox(width: 12),
                     ChoiceChip(
                       label: const Text('Low'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.low,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.low)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.low)),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('Medium'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.medium,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.medium)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.medium)),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('High'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.high,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.high)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.high)),
                     ),
                   ],
                 ),
