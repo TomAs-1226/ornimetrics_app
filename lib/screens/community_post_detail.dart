@@ -28,6 +28,12 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
       'weather': widget.post.weather != null
           ? '${widget.post.weather!.temperatureC.toStringAsFixed(1)}C, ${widget.post.weather!.humidity.toStringAsFixed(0)}% humidity, ${widget.post.weather!.condition}'
           : 'No weather snapshot',
+      'precipChance': widget.post.weather?.precipitationChance,
+      'precipFlags': {
+        'rain': widget.post.weather?.isRaining,
+        'snow': widget.post.weather?.isSnowing,
+        'hail': widget.post.weather?.isHailing,
+      },
       'sensors': 'food low: ${widget.post.sensors.lowFood}, clogged: ${widget.post.sensors.clogged}, cleaning: ${widget.post.sensors.cleaningDue}',
       'model': widget.post.model,
       'tod': widget.post.timeOfDayTag,
@@ -157,6 +163,11 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
                 _chip(context, Icons.cloud_queue, p.weather != null
                     ? '${p.weather!.temperatureC.toStringAsFixed(1)}°C • ${p.weather!.humidity.toStringAsFixed(0)}%'
                     : 'Weather n/a'),
+                if (p.weather?.precipitationChance != null)
+                  _chip(context, Icons.umbrella,
+                      'Precip ${(p.weather!.precipitationChance! * 100).toStringAsFixed(0)}%'),
+                if (p.weather?.isRaining == true || p.weather?.isSnowing == true || p.weather?.isHailing == true)
+                  _chip(context, Icons.cloudy_snowing, 'Wet conditions at capture'),
                 _chip(context, Icons.info_outline, 'Model ${p.model}'),
                 _chip(context, Icons.restaurant, p.sensors.lowFood ? 'Food low' : 'Food OK'),
                 _chip(context, Icons.block, p.sensors.clogged ? 'Clogged?' : 'Flowing'),

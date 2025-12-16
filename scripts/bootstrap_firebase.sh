@@ -22,20 +22,20 @@ cat > firebase.json <<'JSON'
     "platforms": {
       "android": {
         "default": {
-          "projectId": "ornimetrics",
-          "appId": "1:315730159319:android:2470c4aa46fc2a728ef292",
+          "projectId": "__PROJECT_ID__",
+          "appId": "CHANGE_WITH_flutterfire_configure",
           "fileOutput": "android/app/google-services.json"
         }
       },
       "dart": {
         "lib/firebase_options.dart": {
-          "projectId": "ornimetrics",
+          "projectId": "__PROJECT_ID__",
           "configurations": {
-            "android": "1:315730159319:android:2470c4aa46fc2a728ef292",
-            "ios": "1:315730159319:ios:dabebf0666a48f2b8ef292",
-            "macos": "1:315730159319:ios:dabebf0666a48f2b8ef292",
-            "web": "1:315730159319:web:5d42f13b22648d6e8ef292",
-            "windows": "1:315730159319:web:d62f07487c1622e98ef292"
+            "android": "CHANGE_WITH_flutterfire_configure",
+            "ios": "CHANGE_WITH_flutterfire_configure",
+            "macos": "CHANGE_WITH_flutterfire_configure",
+            "web": "CHANGE_WITH_flutterfire_configure",
+            "windows": "CHANGE_WITH_flutterfire_configure"
           }
         }
       }
@@ -60,6 +60,7 @@ cat > firebase.json <<'JSON'
   }
 }
 JSON
+sed -i "s/__PROJECT_ID__/$PROJECT_ID/g" firebase.json
 
 cat > firestore.rules <<'RULES'
 rules_version = '2';
@@ -127,6 +128,13 @@ RC
 
 echo "[firebase-bootstrap] using project $PROJECT_ID"
 firebase use "$PROJECT_ID" --add
+
+if command -v flutterfire >/dev/null 2>&1; then
+  echo "[firebase-bootstrap] Detected flutterfire CLI; attempting to generate firebase_options.dart for $PROJECT_ID"
+  flutterfire configure --project="$PROJECT_ID" --yes --out=lib/firebase_options.dart --platforms=android,ios,macos,web,windows || echo "[firebase-bootstrap] flutterfire configure did not complete; existing firebase_options.dart will be used."
+else
+  echo "[firebase-bootstrap] flutterfire CLI not found. Skipping firebase_options.dart regeneration (existing file left intact)."
+fi
 
 echo "[firebase-bootstrap] deploying rules + indexes"
 firebase deploy --only firestore:rules,firestore:indexes,storage,database || true

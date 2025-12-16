@@ -8,17 +8,25 @@ class MockWeatherProvider implements WeatherProvider {
   @override
   Future<WeatherSnapshot> fetchCurrent() async {
     await Future<void>.delayed(const Duration(milliseconds: 350));
+    final now = DateTime.now();
+    final isEvening = now.hour >= 18 || now.hour <= 5;
+    final raining = now.minute % 3 == 0;
     return WeatherSnapshot(
-      condition: 'Partly cloudy',
-      temperatureC: 18.5,
-      humidity: 62,
-      precipitationChance: 0.2,
+      condition: raining ? 'Rain showers' : (isEvening ? 'Clear night' : 'Partly cloudy'),
+      temperatureC: isEvening ? 14.5 : 19.5,
+      feelsLikeC: isEvening ? 13.0 : 20.1,
+      humidity: raining ? 86 : 62,
+      precipitationChance: raining ? 0.65 : 0.2,
       windKph: 9.4,
       pressureMb: 1014,
-      uvIndex: 3.2,
-      visibilityKm: 12.5,
+      uvIndex: isEvening ? 0.0 : 3.2,
+      visibilityKm: raining ? 8.0 : 12.5,
       dewPointC: 10.2,
       fetchedAt: DateTime.now(),
+      isRaining: raining,
+      isSnowing: false,
+      isHailing: false,
+      precipitationMm: raining ? 2.4 : 0.0,
     );
   }
 }

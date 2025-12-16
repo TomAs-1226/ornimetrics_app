@@ -24,6 +24,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   late CommunityService _service;
   bool _testMode = true;
   bool _loading = false;
+  bool _loadingPosts = true;
   String _status = '';
   List<CommunityPost> _posts = <CommunityPost>[];
   final _captionController = TextEditingController();
@@ -53,11 +54,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   }
 
   Future<void> _refresh() async {
+    setState(() => _loadingPosts = true);
     try {
       final res = await _service.fetchPosts();
       setState(() => _posts = res);
     } catch (e) {
       setState(() => _status = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingPosts = false);
     }
   }
 
@@ -193,21 +197,70 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
           const SizedBox(height: 8),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
-            child: _posts.isEmpty
-                ? Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        _status.isNotEmpty ? _status : 'No posts yet. Test mode keeps data locally.',
-                        style: const TextStyle(fontSize: 13),
+            child: _loadingPosts
+                ? _buildSkeletonFeed()
+                : _posts.isEmpty
+                    ? Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            _status.isNotEmpty ? _status : 'No posts yet. Test mode keeps data locally.',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      )
+                    : Column(
+                        children: _posts.map(_buildPostTile).toList(),
                       ),
-                    ),
-                  )
-                : Column(
-                    children: _posts.map(_buildPostTile).toList(),
-                  ),
           )
         ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonFeed() {
+    return Column(
+      children: List.generate(
+        3,
+        (i) => Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(height: 12, width: 120, color: Colors.grey.shade300),
+                          const SizedBox(height: 6),
+                          Container(height: 10, width: 80, color: Colors.grey.shade200),
+                        ],
+                      ),
+                    ),
+                    Container(height: 24, width: 60, color: Colors.grey.shade200),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(height: 12, width: double.infinity, color: Colors.grey.shade200),
+                const SizedBox(height: 8),
+                Container(height: 12, width: double.infinity, color: Colors.grey.shade200),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -372,6 +425,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   }
 
   Widget _buildPostTile(CommunityPost p) {
+    final theme = Theme.of(context);
     return Hero(
       tag: p.id,
       child: Card(
@@ -387,7 +441,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      backgroundColor: theme.colorScheme.primaryContainer,
                       child: Text(p.author.isNotEmpty ? p.author[0].toUpperCase() : '?'),
                     ),
                     const SizedBox(width: 8),
@@ -397,18 +451,21 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                         children: [
                           Text(p.author, style: const TextStyle(fontWeight: FontWeight.w700)),
                           Text(DateFormat('MMM d, hh:mm a').format(p.createdAt.toLocal()),
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
                         ],
                       ),
                     ),
                     Chip(
-                      label: Text(_testMode ? 'Test' : 'Live'),
-                      avatar: Icon(_testMode ? Icons.shield_outlined : Icons.public, size: 16),
+                      label: Text(_testMode ? 'Sandbox' : 'Live'),
+                      avatar: Icon(_testMode ? Icons.science_outlined : Icons.public, size: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(p.caption, style: const TextStyle(fontSize: 15)),
+                Text(
+                  p.caption.isNotEmpty ? p.caption : '(No caption)',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
                 if (p.imageUrl != null) ...[
                   const SizedBox(height: 10),
                   ClipRRect(
@@ -421,23 +478,46 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _chip(Icons.access_time, p.timeOfDayTag),
-                    _chip(Icons.cloud_queue, p.weather != null
-                        ? '${p.weather!.temperatureC.toStringAsFixed(1)}°C / ${p.weather!.humidity.toStringAsFixed(0)}%'
-                        : 'Weather n/a'),
-                    _chip(Icons.restaurant, p.sensors.lowFood ? 'Food low' : 'Food ok'),
-                    _chip(Icons.block, p.sensors.clogged ? 'Clogged' : 'Clear'),
-                    _chip(Icons.cleaning_services, p.sensors.cleaningDue ? 'Clean soon' : 'Fresh'),
-                    _chip(Icons.devices_other, p.model),
+                    _tagChip(Icons.access_time, p.timeOfDayTag),
+                    _tagChip(
+                      Icons.cloud_queue,
+                      p.weather != null
+                          ? '${p.weather!.temperatureC.toStringAsFixed(1)}°C • ${p.weather!.humidity.toStringAsFixed(0)}% • ${p.weather!.condition}'
+                          : 'Weather n/a',
+                    ),
+                    if (p.weather?.isRaining == true || p.weather?.isSnowing == true || p.weather?.isHailing == true)
+                      _tagChip(Icons.umbrella, 'Wet weather'),
+                    _tagChip(Icons.restaurant, p.sensors.lowFood ? 'Food low' : 'Food ok'),
+                    _tagChip(Icons.block, p.sensors.clogged ? 'Clogged' : 'Clear'),
+                    _tagChip(Icons.cleaning_services, p.sensors.cleaningDue ? 'Clean soon' : 'Fresh'),
+                    _tagChip(Icons.devices_other, p.model),
                   ],
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
-                    icon: const Icon(Icons.question_answer_outlined),
-                    label: const Text('Ask AI about this post'),
-                  ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Posted ${DateFormat('MMM d • h:mm a').format(p.createdAt.toLocal())}',
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+                    ),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+                          icon: const Icon(Icons.chat_bubble_outline),
+                          label: const Text('Open thread'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => Navigator.of(context)
+                              .push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('Ask AI'),
+                        ),
+                      ],
+                    ),
+                  ],
                 )
               ],
             ),
@@ -447,10 +527,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     );
   }
 
-  Widget _chip(IconData icon, String label) {
+  Widget _tagChip(IconData icon, String label) {
     return Chip(
-      avatar: Icon(icon, size: 16),
+      avatar: Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
       label: Text(label),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.6),
+      labelStyle: const TextStyle(fontWeight: FontWeight.w600),
     );
   }
 }

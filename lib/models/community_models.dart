@@ -70,6 +70,11 @@ class CommunityPost {
               visibilityKm: (data['weather']['visibilityKm'] as num?)?.toDouble(),
               dewPointC: (data['weather']['dewPointC'] as num?)?.toDouble(),
               fetchedAt: DateTime.tryParse(data['weather']['fetchedAt']?.toString() ?? '') ?? DateTime.now(),
+              isRaining: data['weather']['isRaining'] == true,
+              isSnowing: data['weather']['isSnowing'] == true,
+              isHailing: data['weather']['isHailing'] == true,
+              feelsLikeC: (data['weather']['feelsLikeC'] as num?)?.toDouble(),
+              precipitationMm: (data['weather']['precipitationMm'] as num?)?.toDouble(),
             )
           : null,
       sensors: SensorSnapshot.fromMap(data['sensors'] as Map<String, dynamic>?),
@@ -95,6 +100,11 @@ class CommunityPost {
                 'visibilityKm': weather!.visibilityKm,
                 'dewPointC': weather!.dewPointC,
                 'fetchedAt': weather!.fetchedAt.toIso8601String(),
+                'isRaining': weather!.isRaining,
+                'isSnowing': weather!.isSnowing,
+                'isHailing': weather!.isHailing,
+                'feelsLikeC': weather!.feelsLikeC,
+                'precipitationMm': weather!.precipitationMm,
               }
             : null,
         'sensors': sensors.toMap(),

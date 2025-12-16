@@ -42,12 +42,10 @@ dependencies:
   pie_chart: ^5.4.0
   file_selector: ^1.0.3
   image_picker: ^1.0.7
-
-
-
-
   shared_preferences: ^2.2.2
      # key-value storage plugin
+  flutter_local_notifications: ^17.2.1
+     # local notifications for feeder progress and alerts
 
 # App Icon
 flutter_launcher_icons:
