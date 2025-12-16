@@ -53,21 +53,28 @@ class CommunityCenterScreen extends StatefulWidget {
     _refreshWeather();
   }
 
-    Future<void> _loadPrefs() async {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getBool('pref_community_test') ?? true;
-      final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
-    setState(() => _testMode = saved);
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getBool('pref_community_test') ?? true;
+    final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+    setState(() {
+      _testMode = saved;
+      _aiModel = _aiModels.any((m) => m['value'] == model)
+          ? model
+          : _aiModels.first['value']!;
+    });
     _service.testMode = saved;
-      setState(() => _aiModel = model);
+    if (model != _aiModel) {
+      await prefs.setString('pref_ai_model', _aiModel);
     }
+  }
 
-    Future<void> _setAiModel(String? model) async {
-      if (model == null) return;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('pref_ai_model', model);
-      setState(() => _aiModel = model);
-    }
+  Future<void> _setAiModel(String? model) async {
+    if (model == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pref_ai_model', model);
+    setState(() => _aiModel = model);
+  }
 
   Future<void> _refresh() async {
     setState(() => _loadingPosts = true);
@@ -335,11 +342,14 @@ class CommunityCenterScreen extends StatefulWidget {
             child: ListTile(
               leading: const Icon(Icons.auto_awesome),
               title: const Text('AI model'),
-              subtitle: Text(_aiModels.firstWhere((m) => m['value'] == _aiModel,
-                      orElse: () => {'label': _aiModel})['label'] ??
+              subtitle: Text(_aiModels
+                      .firstWhere((m) => m['value'] == _aiModel,
+                          orElse: () => {'label': _aiModel})['label'] ??
                   _aiModel),
               trailing: DropdownButton<String>(
-                value: _aiModel,
+                value: _aiModels.any((m) => m['value'] == _aiModel)
+                    ? _aiModel
+                    : _aiModels.first['value'],
                 items: _aiModels
                     .map((m) => DropdownMenuItem<String>(
                           value: m['value'],

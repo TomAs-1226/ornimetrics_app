@@ -195,25 +195,49 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   value: prefs.weatherBasedCleaningEnabled,
                   onChanged: (v) => _service.updatePrefs(prefs.copyWith(weatherBasedCleaningEnabled: v)),
                 ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Text('Weather sensitivity'),
-                    ChoiceChip(
-                      label: const Text('Normal'),
-                      selected: prefs.weatherSensitivity == WeatherSensitivity.normal,
-                      onSelected: (_) =>
-                          _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
-                    ),
-                    ChoiceChip(
-                      label: const Text('High'),
-                      selected: prefs.weatherSensitivity == WeatherSensitivity.high,
-                      onSelected: (_) =>
-                          _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final chips = [
+                      ChoiceChip(
+                        label: const Text('Normal'),
+                        selected: prefs.weatherSensitivity == WeatherSensitivity.normal,
+                        onSelected: (_) =>
+                            _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
+                      ),
+                      ChoiceChip(
+                        label: const Text('High'),
+                        selected: prefs.weatherSensitivity == WeatherSensitivity.high,
+                        onSelected: (_) =>
+                            _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
+                      ),
+                    ];
+
+                    if (constraints.maxWidth < 360) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Weather sensitivity'),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: chips,
+                          )
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        const Text('Weather sensitivity'),
+                        const SizedBox(width: 12),
+                        Wrap(
+                          spacing: 8,
+                          children: chips,
+                        )
+                      ],
+                    );
+                  },
                 ),
                 Slider(
                   value: prefs.humidityThreshold,

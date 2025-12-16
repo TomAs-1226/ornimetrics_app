@@ -136,7 +136,8 @@ class MaintenanceRulesEngine {
     if (!prefs.weatherBasedCleaningEnabled) return;
 
     final humidityLimit = _humidityThreshold(prefs.weatherSensitivity, prefs.humidityThreshold);
-    final wetEvent = weather.isWet || (weather.precipitationMm ?? 0) > 0.2;
+    final wetEvent =
+        weather.isWet || (weather.precipitationMm ?? 0) > 0.2 || (weather.precipitationChance ?? 0) >= 0.5;
     final humidEvent = weather.humidity >= humidityLimit;
     if (!wetEvent && !humidEvent) return;
 
@@ -159,7 +160,10 @@ class MaintenanceRulesEngine {
   }) async {
     if (!prefs.heavyUseEnabled) return;
 
-    final score = dispenseEvents + activeDuration.inMinutes * 2;
+    final perMinute = activeDuration.inMinutes == 0
+        ? dispenseEvents.toDouble()
+        : dispenseEvents / activeDuration.inMinutes;
+    final score = dispenseEvents + (perMinute * 10) + activeDuration.inMinutes;
     final threshold = _usageThreshold(prefs.heavyUseSensitivity);
     state.value = state.value.copyWith(lastUsageScore: score.toDouble());
     if (score < threshold) return;
@@ -193,14 +197,14 @@ class MaintenanceRulesEngine {
       isSnowing: label.toLowerCase().contains('snow'),
       isHailing: label.toLowerCase().contains('hail'),
     );
-    await applyWeather(mock, prefs);
+    await applyWeather(mock, prefs.copyWith(weatherCooldownHours: 0));
   }
 
   Future<void> simulateHeavyUse(NotificationPreferences prefs) async {
     await applyUsage(
       dispenseEvents: 120,
       activeDuration: const Duration(minutes: 35),
-      prefs: prefs,
+      prefs: prefs.copyWith(heavyUseCooldownHours: 0),
     );
   }
 }
