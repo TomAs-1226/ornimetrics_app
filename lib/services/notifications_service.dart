@@ -121,9 +121,12 @@ class NotificationsService {
     if (Platform.isAndroid) {
       final androidPlugin =
           _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.requestPermission();
-    } else if (Platform.isIOS) {
-      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<DarwinFlutterLocalNotificationsPlugin>();
+      // Android 13+ requires an explicit notifications permission grant.
+      await androidPlugin?.requestNotificationsPermission();
+      await androidPlugin?.requestExactAlarmsPermission();
+    } else if (Platform.isIOS || Platform.isMacOS) {
+      final iosPlugin =
+          _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
       await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
     }
   }

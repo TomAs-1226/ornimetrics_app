@@ -88,26 +88,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             onChanged: (val) =>
                                 _service.updatePrefs(prefs.copyWith(progressNotificationsEnabled: val)),
                           ),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(prefs.lastCleaned == null
-                                    ? 'Last cleaned: not recorded'
-                                    : 'Last cleaned: ${DateFormat('yMMMd').format(prefs.lastCleaned!)}'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  await _service.markCleaned();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Marked cleaned today')),
-                                    );
-                                  }
-                                },
-                                child: const Text('Mark cleaned today'),
-                              )
-                            ],
-                          )
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final label = Text(
+                                  prefs.lastCleaned == null
+                                      ? 'Last cleaned: not recorded'
+                                      : 'Last cleaned: ${DateFormat('yMMMd').format(prefs.lastCleaned!)}',
+                                  softWrap: true,
+                                );
+
+                                final button = ElevatedButton(
+                                  onPressed: () async {
+                                    await _service.markCleaned();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Marked cleaned today')),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Mark cleaned today'),
+                                );
+
+                                if (constraints.maxWidth < 420) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      label,
+                                      const SizedBox(height: 8),
+                                      Align(alignment: Alignment.centerLeft, child: button),
+                                    ],
+                                  );
+                                }
+
+                                return Row(
+                                  children: [
+                                    Expanded(child: label),
+                                    button,
+                                  ],
+                                );
+                              },
+                            )
                         ],
                       ),
                     ),
@@ -299,15 +319,42 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.rice_bowl_outlined),
-                    const SizedBox(width: 8),
-                    Text('Food level', style: Theme.of(context).textTheme.titleMedium),
-                    const Spacer(),
-                    Text(reading == null ? 'Awaiting sensor' : '${pct.toStringAsFixed(0)}%'),
-                  ],
-                ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trailing = Text(
+                        reading == null ? 'Awaiting sensor' : '${pct.toStringAsFixed(0)}%',
+                        overflow: TextOverflow.ellipsis,
+                      );
+
+                      if (constraints.maxWidth < 360) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.rice_bowl_outlined),
+                                const SizedBox(width: 8),
+                                Text('Food level', style: Theme.of(context).textTheme.titleMedium),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            trailing,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          const Icon(Icons.rice_bowl_outlined),
+                          const SizedBox(width: 8),
+                          Text('Food level', style: Theme.of(context).textTheme.titleMedium),
+                          const Spacer(),
+                          trailing,
+                        ],
+                      );
+                    },
+                  ),
                 const SizedBox(height: 8),
                 LinearProgressIndicator(
                   minHeight: 10,

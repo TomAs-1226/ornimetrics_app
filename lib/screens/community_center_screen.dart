@@ -20,7 +20,13 @@ class CommunityCenterScreen extends StatefulWidget {
   State<CommunityCenterScreen> createState() => _CommunityCenterScreenState();
 }
 
-class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
+  class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
+    static const List<Map<String, String>> _aiModels = [
+      {'value': 'gpt-4o-mini', 'label': 'GPT-4o Mini'},
+      {'value': 'gpt-4o', 'label': 'GPT-4o'},
+      {'value': 'gpt-5.1', 'label': 'GPT-5.1'},
+      {'value': 'gpt-5.2', 'label': 'GPT-5.2'},
+    ];
   late CommunityService _service;
   bool _testMode = true;
   bool _loading = false;
@@ -47,14 +53,21 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     _refreshWeather();
   }
 
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool('pref_community_test') ?? true;
-    final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+    Future<void> _loadPrefs() async {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getBool('pref_community_test') ?? true;
+      final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
     setState(() => _testMode = saved);
     _service.testMode = saved;
-    setState(() => _aiModel = model);
-  }
+      setState(() => _aiModel = model);
+    }
+
+    Future<void> _setAiModel(String? model) async {
+      if (model == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pref_ai_model', model);
+      setState(() => _aiModel = model);
+    }
 
   Future<void> _refresh() async {
     setState(() => _loadingPosts = true);
@@ -309,18 +322,37 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   Widget _metaRow(User? user) {
     return Column(
       children: [
-        Card(
-          child: SwitchListTile(
-            title: const Text('Community Test Mode'),
-            subtitle: const Text('Sandbox collection + emulator friendly'),
-            value: _testMode,
-            onChanged: _toggleTestMode,
-            secondary: const Icon(Icons.science_outlined),
+          Card(
+            child: SwitchListTile(
+              title: const Text('Community Test Mode'),
+              subtitle: const Text('Sandbox collection + emulator friendly'),
+              value: _testMode,
+              onChanged: _toggleTestMode,
+              secondary: const Icon(Icons.science_outlined),
+            ),
           ),
-        ),
-        if (!_testMode)
           Card(
             child: ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('AI model'),
+              subtitle: Text(_aiModels.firstWhere((m) => m['value'] == _aiModel,
+                      orElse: () => {'label': _aiModel})['label'] ??
+                  _aiModel),
+              trailing: DropdownButton<String>(
+                value: _aiModel,
+                items: _aiModels
+                    .map((m) => DropdownMenuItem<String>(
+                          value: m['value'],
+                          child: Text(m['label'] ?? m['value']!),
+                        ))
+                    .toList(),
+                onChanged: _setAiModel,
+              ),
+            ),
+          ),
+          if (!_testMode)
+            Card(
+              child: ListTile(
               leading: const Icon(Icons.verified_user),
               title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
               subtitle: const Text('Email/password auth via Firebase emulators by default'),
