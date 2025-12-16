@@ -33,17 +33,21 @@ dependencies:
     sdk: flutter
   firebase_core: ^2.27.0
   firebase_database: ^10.4.0
+  firebase_auth: ^4.17.9
+  cloud_firestore: ^4.15.9
+  firebase_storage: ^11.6.10
   intl: ^0.19.0
   http: ^1.2.1
   flutter_dotenv: ^5.1.0
   pie_chart: ^5.4.0
   file_selector: ^1.0.3
+  image_picker: ^1.0.7
 
 
 
 
   shared_preferences: ^2.2.2
-     # key-value storage plugin
+  # key-value storage plugin
 
 # App Icon
 flutter_launcher_icons:
