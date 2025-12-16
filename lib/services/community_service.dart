@@ -18,13 +18,24 @@ class CommunityService {
       .collection(testMode ? 'community_posts_test' : 'community_posts');
 
   Future<User?> signIn(String email, String password) async {
-    final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
-    return cred.user;
+    try {
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
+      return cred.user;
+    } on FirebaseException catch (_) {
+      // If emulator/back-end is unavailable, drop into local sandbox mode.
+      testMode = true;
+      return null;
+    }
   }
 
   Future<User?> signUp(String email, String password) async {
-    final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
-    return cred.user;
+    try {
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
+      return cred.user;
+    } on FirebaseException catch (_) {
+      testMode = true;
+      return null;
+    }
   }
 
   Future<void> toggleTestMode(bool enabled) async {
@@ -35,8 +46,13 @@ class CommunityService {
     if (testMode) {
       return List<CommunityPost>.from(_localPosts.reversed);
     }
-    final snap = await _collection.orderBy('created_at', descending: true).limit(50).get();
-    return snap.docs.map((d) => CommunityPost.fromFirestore(d)).toList();
+    try {
+      final snap = await _collection.orderBy('created_at', descending: true).limit(50).get();
+      return snap.docs.map((d) => CommunityPost.fromFirestore(d)).toList();
+    } on FirebaseException catch (_) {
+      testMode = true;
+      return List<CommunityPost>.from(_localPosts.reversed);
+    }
   }
 
   Future<void> createPost({
@@ -61,30 +77,44 @@ class CommunityService {
       ));
       return;
     }
+    try {
+      String? uploadedUrl;
+      if (photo != null) {
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child((testMode ? 'community_posts_test' : 'community_posts'))
+            .child('${DateTime.now().millisecondsSinceEpoch}_${photo.path.split('/').last}');
+        final task = await ref.putFile(photo);
+        uploadedUrl = await task.ref.getDownloadURL();
+      }
 
-    String? uploadedUrl;
-    if (photo != null) {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child((testMode ? 'community_posts_test' : 'community_posts'))
-          .child('${DateTime.now().millisecondsSinceEpoch}_${photo.path.split('/').last}');
-      final task = await ref.putFile(photo);
-      uploadedUrl = await task.ref.getDownloadURL();
-    }
-
-    await _collection.add({
-      ...CommunityPost(
-        id: 'pending',
+      await _collection.add({
+        ...CommunityPost(
+          id: 'pending',
+          author: author,
+          caption: caption,
+          imageUrl: uploadedUrl,
+          createdAt: DateTime.now(),
+          timeOfDayTag: _timeOfDayFor(DateTime.now()),
+          sensors: sensors,
+          model: model,
+          weather: weather,
+        ).toMap(),
+      });
+    } on FirebaseException catch (_) {
+      testMode = true;
+      _localPosts.add(CommunityPost(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
         author: author,
         caption: caption,
-        imageUrl: uploadedUrl,
+        imageUrl: null,
         createdAt: DateTime.now(),
         timeOfDayTag: _timeOfDayFor(DateTime.now()),
         sensors: sensors,
         model: model,
         weather: weather,
-      ).toMap(),
-    });
+      ));
+    }
   }
 
   String _timeOfDayFor(DateTime dt) {

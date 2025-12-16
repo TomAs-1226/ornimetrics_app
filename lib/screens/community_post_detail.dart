@@ -13,7 +13,8 @@ class CommunityPostDetail extends StatefulWidget {
 }
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
-  final _ai = MockAiProvider();
+  final AiProvider _ai = RealAiProvider();
+  final AiProvider _aiFallback = MockAiProvider();
   final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
@@ -39,7 +40,13 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
       'tod': widget.post.timeOfDayTag,
       'caption': widget.post.caption,
     };
-    final aiReply = await _ai.send(List.from(_messages), context: contextMap);
+    AiMessage aiReply;
+    try {
+      aiReply = await _ai.send(List.from(_messages), context: contextMap);
+    } catch (e) {
+      aiReply = await _aiFallback.send(List.from(_messages), context: contextMap);
+      aiReply = AiMessage(aiReply.role, '${aiReply.content} (fallback due to $e)');
+    }
     setState(() {
       _messages.add(aiReply);
       _sending = false;
