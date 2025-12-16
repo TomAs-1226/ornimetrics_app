@@ -14,7 +14,6 @@ class CommunityPostDetail extends StatefulWidget {
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
   final AiProvider _ai = RealAiProvider();
-  final AiProvider _aiFallback = MockAiProvider();
   final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
@@ -44,8 +43,7 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
     try {
       aiReply = await _ai.send(List.from(_messages), context: contextMap);
     } catch (e) {
-      aiReply = await _aiFallback.send(List.from(_messages), context: contextMap);
-      aiReply = AiMessage(aiReply.role, '${aiReply.content} (fallback due to $e)');
+      aiReply = AiMessage('ai', 'AI unavailable right now ($e). Please try again soon.');
     }
     setState(() {
       _messages.add(aiReply);
@@ -67,7 +65,7 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
               children: [
                 _buildCard(context, p),
                 const SizedBox(height: 16),
-                const Text('AI advice (mocked)', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('AI advice', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(

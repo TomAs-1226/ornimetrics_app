@@ -32,7 +32,6 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   WeatherSnapshot? _weather;
   bool _loadingWeather = false;
   final AiProvider _ai = RealAiProvider();
-  final AiProvider _aiFallback = MockAiProvider();
   bool _tagFoodLow = false;
   bool _tagClogged = false;
   bool _tagCleaningDue = false;
@@ -160,13 +159,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   Future<void> _askAiGeneral() async {
     final messages = <AiMessage>[AiMessage('user', 'Any tips for my feeder community?')];
-    AiMessage reply;
-    try {
-      reply = await _ai.send(messages, context: {'weather': _weather?.condition ?? 'n/a', 'sensors': 'n/a'});
-    } catch (e) {
-      reply = await _aiFallback.send(messages, context: {'weather': _weather?.condition ?? 'n/a', 'sensors': 'n/a'});
-      reply = AiMessage(reply.role, '${reply.content} (fallback due to $e)');
-    }
+    final reply = await _ai.send(messages, context: {'weather': _weather?.condition ?? 'n/a', 'sensors': 'n/a'});
     if (!mounted) return;
     showDialog(
       context: context,
@@ -501,16 +494,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 8,
-                  spacing: 8,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Posted ${DateFormat('MMM d • h:mm a').format(p.createdAt.toLocal())}',
                       style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,

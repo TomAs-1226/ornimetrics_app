@@ -172,12 +172,31 @@ void safeSelectionHaptic() {
 
 const bool kUseEmulatorsByDefault = true;
 
-Future<void> _configureFirebaseEmulators() async {
+Future<bool> _isPortOpen(String host, int port) async {
+  try {
+    final socket = await Socket.connect(host, port, timeout: const Duration(milliseconds: 400));
+    socket.destroy();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<bool> _configureFirebaseEmulators() async {
   final host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+  final ports = [8080, 9199, 9099, 9000];
+  final checks = await Future.wait(ports.map((p) => _isPortOpen(host, p)));
+  if (checks.contains(false)) {
+    debugPrint('[firebase] Emulators not reachable on $host; using production backends.');
+    return false;
+  }
+
   FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
   FirebaseStorage.instance.useStorageEmulator(host, 9199);
   FirebaseAuth.instance.useAuthEmulator(host, 9099);
   FirebaseDatabase.instance.useDatabaseEmulator(host, 9000);
+  debugPrint('[firebase] Emulators configured for $host.');
+  return true;
 }
 
 Widget envPill(BuildContext context, {required IconData icon, required String label}) {
@@ -225,7 +244,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
   await _ensureFirebaseInitialized();
-  if (kDebugMode && kUseEmulatorsByDefault) {
+  final envWantsEmulators = dotenv.env['USE_EMULATORS']?.toLowerCase() == 'false' ? false : kUseEmulatorsByDefault;
+  if (kDebugMode && envWantsEmulators) {
     await _configureFirebaseEmulators();
   }
 
