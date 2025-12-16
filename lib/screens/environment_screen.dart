@@ -167,10 +167,11 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
               ],
             ),
             const SizedBox(height: 16),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
               children: [
                 _metricChip(icon: Icons.water_drop, label: 'Humidity', value: '${data.humidity.toStringAsFixed(0)}%'),
-                const SizedBox(width: 12),
                 _metricChip(
                   icon: Icons.umbrella,
                   label: 'Precip',
@@ -178,7 +179,31 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
                       ? '${(data.precipitationChance! * 100).toStringAsFixed(0)}%'
                       : '—',
                 ),
-                const SizedBox(width: 12),
+                _metricChip(
+                  icon: Icons.air,
+                  label: 'Wind',
+                  value: data.windKph != null ? '${data.windKph!.toStringAsFixed(0)} kph' : 'Calm',
+                ),
+                _metricChip(
+                  icon: Icons.speed,
+                  label: 'Pressure',
+                  value: data.pressureMb != null ? '${data.pressureMb!.toStringAsFixed(0)} mb' : '—',
+                ),
+                _metricChip(
+                  icon: Icons.remove_red_eye_outlined,
+                  label: 'Visibility',
+                  value: data.visibilityKm != null ? '${data.visibilityKm!.toStringAsFixed(1)} km' : '—',
+                ),
+                _metricChip(
+                  icon: Icons.wb_sunny_outlined,
+                  label: 'UV index',
+                  value: data.uvIndex?.toStringAsFixed(1) ?? '—',
+                ),
+                _metricChip(
+                  icon: Icons.water_outlined,
+                  label: 'Dew point',
+                  value: data.dewPointC != null ? '${data.dewPointC!.toStringAsFixed(1)}°C' : '—',
+                ),
                 _metricChip(
                   icon: Icons.access_time,
                   label: 'Updated',
@@ -194,24 +219,34 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
 
   Widget _metricChip({required IconData icon, required String label, required String value}) {
     final theme = Theme.of(context);
-    return Expanded(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 120, maxWidth: 180),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceVariant.withOpacity(0.6),
           borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.surfaceVariant.withOpacity(0.9),
+              theme.colorScheme.primaryContainer.withOpacity(0.35),
+            ],
+          ),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18),
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ),
             )
           ],
         ),

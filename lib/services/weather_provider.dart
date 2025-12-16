@@ -13,6 +13,11 @@ class MockWeatherProvider implements WeatherProvider {
       temperatureC: 18.5,
       humidity: 62,
       precipitationChance: 0.2,
+      windKph: 9.4,
+      pressureMb: 1014,
+      uvIndex: 3.2,
+      visibilityKm: 12.5,
+      dewPointC: 10.2,
       fetchedAt: DateTime.now(),
     );
   }
