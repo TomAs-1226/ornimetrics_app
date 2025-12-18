@@ -25,6 +25,7 @@ import 'models/weather_models.dart';
 import 'screens/community_center_screen.dart';
 import 'screens/environment_screen.dart';
 import 'screens/notification_center_screen.dart';
+import 'services/ai_provider.dart';
 import 'services/location_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
@@ -103,6 +104,18 @@ class DetectionPhoto {
       weatherAtCapture: snapshot,
     );
   }
+}
+
+class TrendSignal {
+  TrendSignal({required this.species, required this.start, required this.end});
+
+  final String species;
+  final int start;
+  final int end;
+
+  int get delta => end - start;
+  double get changeRate => start == 0 ? end.toDouble() : (end - start) / start;
+  String get direction => delta > 0 ? 'rising' : (delta < 0 ? 'falling' : 'steady');
 }
 
 // Model for actionable eco tasks
@@ -476,6 +489,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Position? _position;
   String? _locationStatus;
   bool _requestingLocation = false;
+  final AiProvider _trendAi = RealAiProvider();
+  bool _trendAiLoading = false;
+  String? _trendAiInsight;
+  List<TrendSignal> _trendSignals = [];
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -788,11 +805,14 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
+      final trendSignals = _deriveTrendsFromPhotos(items);
+
       if (!mounted) return;
       setState(() {
         _photos = items;
         _loadingPhotos = false;
         _photosLastUpdated = DateTime.now();
+        _trendSignals = trendSignals;
       });
     } catch (e) {
       if (!mounted) return;
@@ -850,6 +870,77 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           NotificationsService.instance.preferences.value,
         );
       }
+    }
+  }
+
+  List<TrendSignal> _deriveTrendsFromPhotos(List<DetectionPhoto> photos) {
+    if (photos.isEmpty) return [];
+    final now = DateTime.now().toUtc();
+    final cutoff = now.subtract(const Duration(days: 7));
+    final recent = photos.where((p) => p.timestamp.toUtc().isAfter(cutoff) && p.species != null && p.species!.isNotEmpty);
+
+    final Map<String, Map<String, int>> perDay = {};
+    for (final p in recent) {
+      final dayKey = DateFormat('yyyy-MM-dd').format(p.timestamp.toUtc());
+      final species = p.species!.toLowerCase();
+      perDay.putIfAbsent(dayKey, () => {});
+      perDay[dayKey]![species] = (perDay[dayKey]![species] ?? 0) + 1;
+    }
+
+    final sortedDays = perDay.keys.toList()..sort();
+    if (sortedDays.length < 2) return [];
+
+    final Map<String, TrendSignal> signals = {};
+    for (final day in sortedDays) {
+      final counts = perDay[day]!;
+      counts.forEach((species, count) {
+        signals.putIfAbsent(species, () => TrendSignal(species: species, start: 0, end: 0));
+        final signal = signals[species]!;
+        if (day == sortedDays.first) {
+          signals[species] = TrendSignal(species: species, start: count, end: signal.end);
+        }
+        if (day == sortedDays.last) {
+          signals[species] = TrendSignal(species: species, start: signal.start, end: count);
+        }
+      });
+    }
+
+    final list = signals.values.where((s) => s.delta != 0).toList()
+      ..sort((a, b) => b.delta.abs().compareTo(a.delta.abs()));
+    return list.take(5).toList();
+  }
+
+  Future<void> _generateTrendAiInsight() async {
+    if (_trendSignals.isEmpty) return;
+    setState(() {
+      _trendAiLoading = true;
+      _trendAiInsight = null;
+    });
+
+    final summary = _trendSignals
+        .map((s) => '${s.species}: ${s.direction} (${s.start} → ${s.end})')
+        .join('; ');
+
+    final messages = <AiMessage>[
+      AiMessage('system', 'You are an ornithology analyst. Blend migration heuristics with numeric trends.'),
+      AiMessage('user', 'Here are 7-day trend signals: $summary. Provide 3 succinct migration or behavior insights.'),
+    ];
+
+    try {
+      final reply = await _trendAi.send(messages, context: {
+        'location': _position != null ? '${_position!.latitude},${_position!.longitude}' : 'unknown',
+      });
+      if (!mounted) return;
+      setState(() {
+        _trendAiInsight = reply.content;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _trendAiInsight = 'Trend AI unavailable: $e';
+      });
+    } finally {
+      if (mounted) setState(() => _trendAiLoading = false);
     }
   }
 
@@ -1195,6 +1286,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     const SizedBox(height: 24),
             _buildTasksCard(),
             const SizedBox(height: 24),
+                    _buildTrendsCard(),
+                    const SizedBox(height: 24),
                     _buildAiAnalysisCard(),
                   ],
                 ),
@@ -3023,6 +3116,78 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     ),
                 ],
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendsCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                IconButton(
+                  icon: _trendAiLoading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.auto_awesome),
+                  tooltip: 'Ask AI for migration insight',
+                  onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+                )
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_trendSignals.isEmpty)
+              Text(
+                'Need more data to spot trends. Add snapshots with species labels over several days.',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _trendSignals
+                        .map(
+                          (s) => Chip(
+                            avatar: Icon(
+                              s.direction == 'rising'
+                                  ? Icons.trending_up
+                                  : s.direction == 'falling'
+                                      ? Icons.trending_down
+                                      : Icons.remove,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            label: Text(
+                              '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            if (_trendAiInsight != null) ...[
+              const Divider(height: 20),
+              Text('AI migration insight', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text(_trendAiInsight!),
+            ]
           ],
         ),
       ),

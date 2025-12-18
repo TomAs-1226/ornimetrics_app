@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../models/community_models.dart';
 import '../models/weather_models.dart';
@@ -44,6 +45,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   final CommunityService _service = CommunityService();
   final AiProvider _ai = RealAiProvider();
   final _captionController = TextEditingController();
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   List<CommunityPost> _posts = <CommunityPost>[];
   WeatherSnapshot? _weather;
@@ -52,6 +54,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   bool _loading = false;
   bool _loadingPosts = true;
   bool _loadingWeather = false;
+  bool _biometricAvailable = false;
   String _status = '';
   String _aiModel = 'gpt-4o-mini';
   bool _tagFoodLow = false;
@@ -64,6 +67,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     _loadPrefs();
     _refresh();
     _refreshWeather();
+    _initBiometricSupport();
   }
 
   @override
@@ -82,6 +86,18 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     }
   }
 
+  Future<void> _initBiometricSupport() async {
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      final isSupported = await _localAuth.isDeviceSupported();
+      if (mounted) {
+        setState(() => _biometricAvailable = canCheck && isSupported);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _biometricAvailable = false);
+    }
+  }
+
   Future<void> _refresh() async {
     setState(() => _loadingPosts = true);
     try {
@@ -94,6 +110,32 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
       setState(() => _status = e.toString());
     } finally {
       if (mounted) setState(() => _loadingPosts = false);
+    }
+  }
+
+  bool _isValidEmail(String value) {
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    return emailRegex.hasMatch(value.trim());
+  }
+
+  bool _isStrongPassword(String value) {
+    return value.length >= 12 &&
+        RegExp(r'[A-Z]').hasMatch(value) &&
+        RegExp(r'[a-z]').hasMatch(value) &&
+        RegExp(r'[0-9]').hasMatch(value) &&
+        RegExp(r'[!@#\$%^&*(),.?":{}|<>]').hasMatch(value);
+  }
+
+  Future<bool> _authenticateBiometricIfAvailable({bool requireEnrollment = false}) async {
+    if (!_biometricAvailable) return !requireEnrollment;
+    try {
+      final didAuth = await _localAuth.authenticate(
+        localizedReason: 'Confirm it’s you before posting to the community.',
+        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: false),
+      );
+      return didAuth;
+    } catch (_) {
+      return !requireEnrollment;
     }
   }
 
@@ -124,41 +166,85 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   Future<void> _ensureAuthenticated() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) return;
+    if (user != null) {
+      await _authenticateBiometricIfAvailable(requireEnrollment: true);
+      return;
+    }
 
     final emailController = TextEditingController();
     final passController = TextEditingController();
+    String? error;
 
     await showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Community login'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
-            TextField(
-              controller: passController,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Community login'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
+              TextField(
+                controller: passController,
+                decoration: const InputDecoration(labelText: 'Password (12+ chars, mix of cases, number, symbol)'),
+                obscureText: true,
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ]
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () async {
+                final email = emailController.text.trim();
+                final pass = passController.text;
+                if (!_isValidEmail(email)) {
+                  setLocal(() => error = 'Enter a valid email.');
+                  return;
+                }
+                if (!_isStrongPassword(pass)) {
+                  setLocal(() => error = 'Use a strong password (length 12+, upper/lower/digit/symbol).');
+                  return;
+                }
+                try {
+                  await _service.signIn(email, pass);
+                  setLocal(() => error = null);
+                  if (mounted) Navigator.pop(context);
+                  setState(() {});
+                } on FirebaseAuthException catch (e) {
+                  setLocal(() => error = e.message ?? 'Login failed.');
+                }
+              },
+              child: const Text('Log in'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final email = emailController.text.trim();
+                final pass = passController.text;
+                if (!_isValidEmail(email)) {
+                  setLocal(() => error = 'Enter a valid email.');
+                  return;
+                }
+                if (!_isStrongPassword(pass)) {
+                  setLocal(() => error = 'Use a strong password (length 12+, upper/lower/digit/symbol).');
+                  return;
+                }
+                try {
+                  await _service.signUp(email, pass);
+                  setLocal(() => error = null);
+                  if (mounted) Navigator.pop(context);
+                  setState(() {});
+                } on FirebaseAuthException catch (e) {
+                  setLocal(() => error = e.message ?? 'Signup failed.');
+                }
+              },
+              child: const Text('Sign up'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () async {
-              try {
-                await _service.signIn(emailController.text.trim(), passController.text.trim());
-              } catch (_) {
-                await _service.signUp(emailController.text.trim(), passController.text.trim());
-              }
-              if (mounted) Navigator.pop(context);
-              setState(() {});
-            },
-            child: const Text('Continue'),
-          )
-        ],
       ),
     );
   }
@@ -178,6 +264,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     final refreshedUser = FirebaseAuth.instance.currentUser;
     if (refreshedUser == null) {
       setState(() => _status = 'Please login to post.');
+      return;
+    }
+
+    // Quick biometric gate for already-authenticated users.
+    final biometricOk = await _authenticateBiometricIfAvailable(requireEnrollment: false);
+    if (!biometricOk) {
+      setState(() => _status = 'Biometric check cancelled.');
       return;
     }
 
@@ -369,6 +462,21 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
             trailing: OutlinedButton.icon(onPressed: _ensureAuthenticated, icon: const Icon(Icons.login), label: const Text('Login')),
           ),
         ),
+        if (_biometricAvailable)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.fingerprint),
+              title: const Text('Biometric quick check'),
+              subtitle: const Text('Fingerprint/Face ID to confirm posting access'),
+              trailing: IconButton(
+                icon: const Icon(Icons.verified_user_outlined),
+                onPressed: () async {
+                  final ok = await _authenticateBiometricIfAvailable(requireEnrollment: true);
+                  setState(() => _status = ok ? 'Biometric verified' : 'Biometric cancelled');
+                },
+              ),
+            ),
+          ),
         Card(
           child: ListTile(
             leading: const Icon(Icons.auto_awesome),
