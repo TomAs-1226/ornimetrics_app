@@ -290,6 +290,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
       _photo = null;
       await _refresh();
       setState(() => _status = 'Posted successfully');
+    } on FirebaseException catch (e) {
+      final msg = e.message ?? 'Upload failed.';
+      setState(() => _status = msg);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+        );
+      }
     } catch (e) {
       setState(() => _status = 'Upload failed: $e');
     } finally {

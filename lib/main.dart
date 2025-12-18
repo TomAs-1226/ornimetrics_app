@@ -27,6 +27,7 @@ import 'screens/environment_screen.dart';
 import 'screens/notification_center_screen.dart';
 import 'services/ai_provider.dart';
 import 'services/location_service.dart';
+import 'services/community_storage_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
@@ -215,12 +216,26 @@ Widget envPill(BuildContext context, {required IconData icon, required String la
 }
 
 Future<FirebaseApp> _ensureFirebaseInitialized() async {
+  final opts = DefaultFirebaseOptions.currentPlatform;
+  final placeholders = [
+    opts.apiKey,
+    opts.appId,
+    opts.projectId,
+    opts.storageBucket,
+    opts.messagingSenderId,
+  ];
+  if (placeholders.any((e) => e.startsWith('REPLACE_ME'))) {
+    throw StateError(
+      'Firebase configuration is missing. Regenerate lib/firebase_options.dart with "flutterfire configure" '
+      'and use matching google-services.json / GoogleService-Info.plist.',
+    );
+  }
   try {
     if (Firebase.apps.isNotEmpty) {
       return Firebase.apps.first;
     }
     return await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+      options: opts,
     );
   } on FirebaseException catch (e) {
     if (e.code == 'duplicate-app') {

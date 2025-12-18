@@ -2,12 +2,15 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/community_models.dart';
 import '../models/weather_models.dart';
+import 'community_storage_service.dart';
 
 class CommunityService {
+  CommunityService({CommunityStorageService? storage}) : _storage = storage ?? CommunityStorageService();
+
+  final CommunityStorageService _storage;
   CollectionReference<Map<String, dynamic>> get _collection =>
       FirebaseFirestore.instance.collection('community_posts');
 
@@ -36,27 +39,32 @@ class CommunityService {
   }) async {
     String? uploadedUrl;
     if (photo != null) {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('community_posts')
-          .child('${DateTime.now().millisecondsSinceEpoch}_${photo.path.split('/').last}');
-      final task = await ref.putFile(photo);
-      uploadedUrl = await task.ref.getDownloadURL();
+      uploadedUrl = await _storage.uploadCommunityPhoto(file: photo, uid: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous');
     }
 
-    await _collection.add({
-      ...CommunityPost(
-        id: 'pending',
-        author: author,
-        caption: caption,
-        imageUrl: uploadedUrl,
-        createdAt: DateTime.now(),
-        timeOfDayTag: _timeOfDayFor(DateTime.now()),
-        sensors: sensors,
-        model: model,
-        weather: weather,
-      ).toMap(),
-    });
+    try {
+      await _collection.add({
+        ...CommunityPost(
+          id: 'pending',
+          author: author,
+          caption: caption,
+          imageUrl: uploadedUrl,
+          createdAt: DateTime.now(),
+          timeOfDayTag: _timeOfDayFor(DateTime.now()),
+          sensors: sensors,
+          model: model,
+          weather: weather,
+        ).toMap(),
+      });
+    } on FirebaseException catch (e) {
+      throw FirebaseException(
+        plugin: e.plugin,
+        code: e.code,
+        message: e.code == 'permission-denied'
+            ? 'You are not allowed to post to the community bucket. Check Storage rules and bucket ID.'
+            : e.message,
+      );
+    }
   }
 
   String _timeOfDayFor(DateTime dt) {
