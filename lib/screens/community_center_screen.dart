@@ -3,84 +3,93 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/community_models.dart';
-import '../services/community_service.dart';
-import '../services/ai_provider.dart';
-import '../services/weather_provider.dart';
 import '../models/weather_models.dart';
+import '../services/ai_provider.dart';
+import '../services/community_service.dart';
+import '../services/weather_provider.dart';
 import 'community_post_detail.dart';
 
 class CommunityCenterScreen extends StatefulWidget {
-  const CommunityCenterScreen({super.key});
+  const CommunityCenterScreen({
+    super.key,
+    required this.weatherProvider,
+    required this.latitude,
+    required this.longitude,
+    this.locationStatus,
+    this.onRequestLocation,
+  });
+
+  final WeatherProvider weatherProvider;
+  final double? latitude;
+  final double? longitude;
+  final String? locationStatus;
+  final VoidCallback? onRequestLocation;
 
   @override
   State<CommunityCenterScreen> createState() => _CommunityCenterScreenState();
 }
 
-  class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
-    static const List<Map<String, String>> _aiModels = [
-      {'value': 'gpt-4o-mini', 'label': 'GPT-4o Mini'},
-      {'value': 'gpt-4o', 'label': 'GPT-4o'},
-      {'value': 'gpt-5.1', 'label': 'GPT-5.1'},
-      {'value': 'gpt-5.2', 'label': 'GPT-5.2'},
-    ];
-  late CommunityService _service;
-  bool _testMode = true;
+class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
+  static const List<Map<String, String>> _aiModels = [
+    {'value': 'gpt-4o-mini', 'label': 'GPT-4o Mini'},
+    {'value': 'gpt-4o', 'label': 'GPT-4o'},
+    {'value': 'gpt-5.1', 'label': 'GPT-5.1'},
+    {'value': 'gpt-5.2', 'label': 'GPT-5.2'},
+  ];
+
+  final CommunityService _service = CommunityService();
+  final AiProvider _ai = RealAiProvider();
+  final _captionController = TextEditingController();
+
+  List<CommunityPost> _posts = <CommunityPost>[];
+  WeatherSnapshot? _weather;
+  File? _photo;
+
   bool _loading = false;
   bool _loadingPosts = true;
-  String _status = '';
-  List<CommunityPost> _posts = <CommunityPost>[];
-  final _captionController = TextEditingController();
-  File? _photo;
-  WeatherSnapshot? _weather;
   bool _loadingWeather = false;
-  final AiProvider _ai = RealAiProvider();
+  String _status = '';
   String _aiModel = 'gpt-4o-mini';
   bool _tagFoodLow = false;
   bool _tagClogged = false;
   bool _tagCleaningDue = false;
-  final WeatherProvider _weatherProvider = MockWeatherProvider();
 
   @override
   void initState() {
     super.initState();
-    _service = CommunityService(testMode: _testMode);
     _loadPrefs();
     _refresh();
     _refreshWeather();
   }
 
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getBool('pref_community_test') ?? true;
-    final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
-    setState(() {
-      _testMode = saved;
-      _aiModel = _aiModels.any((m) => m['value'] == model)
-          ? model
-          : _aiModels.first['value']!;
-    });
-    _service.testMode = saved;
-    if (model != _aiModel) {
-      await prefs.setString('pref_ai_model', _aiModel);
-    }
+  @override
+  void dispose() {
+    _captionController.dispose();
+    super.dispose();
   }
 
-  Future<void> _setAiModel(String? model) async {
-    if (model == null) return;
+  Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pref_ai_model', model);
-    setState(() => _aiModel = model);
+    final model = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+    if (mounted) {
+      setState(() {
+        _aiModel = _aiModels.any((m) => m['value'] == model) ? model : _aiModels.first['value']!;
+      });
+    }
   }
 
   Future<void> _refresh() async {
     setState(() => _loadingPosts = true);
     try {
       final res = await _service.fetchPosts();
-      setState(() => _posts = res);
+      setState(() {
+        _posts = res;
+        _status = '';
+      });
     } catch (e) {
       setState(() => _status = e.toString());
     } finally {
@@ -90,23 +99,40 @@ class CommunityCenterScreen extends StatefulWidget {
 
   Future<void> _refreshWeather() async {
     setState(() => _loadingWeather = true);
+    if (widget.latitude == null || widget.longitude == null) {
+      setState(() {
+        _status = widget.locationStatus ?? 'Location required to attach weather to posts.';
+        _loadingWeather = false;
+      });
+      return;
+    }
     try {
-      final res = await _weatherProvider.fetchCurrent();
-      setState(() => _weather = res);
+      final res = await widget.weatherProvider.fetchCurrent(
+        latitude: widget.latitude!,
+        longitude: widget.longitude!,
+      );
+      setState(() {
+        _weather = res;
+        _status = '';
+      });
     } catch (e) {
       setState(() => _status = 'Weather unavailable: $e');
     } finally {
-      setState(() => _loadingWeather = false);
+      if (mounted) setState(() => _loadingWeather = false);
     }
   }
 
-  Future<void> _loginOrSignUp() async {
+  Future<void> _ensureAuthenticated() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) return;
+
     final emailController = TextEditingController();
     final passController = TextEditingController();
-    await showDialog(
+
+    await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Community Login'),
+        title: const Text('Community login'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -123,9 +149,9 @@ class CommunityCenterScreen extends StatefulWidget {
           TextButton(
             onPressed: () async {
               try {
-                await _service.signIn(emailController.text, passController.text);
+                await _service.signIn(emailController.text.trim(), passController.text.trim());
               } catch (_) {
-                await _service.signUp(emailController.text, passController.text);
+                await _service.signUp(emailController.text.trim(), passController.text.trim());
               }
               if (mounted) Navigator.pop(context);
               setState(() {});
@@ -145,10 +171,16 @@ class CommunityCenterScreen extends StatefulWidget {
 
   Future<void> _createPost() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (!_testMode && user == null) {
-      setState(() => _status = 'Please login first.');
+    if (user == null) {
+      await _ensureAuthenticated();
+    }
+
+    final refreshedUser = FirebaseAuth.instance.currentUser;
+    if (refreshedUser == null) {
+      setState(() => _status = 'Please login to post.');
       return;
     }
+
     setState(() {
       _loading = true;
       _status = '';
@@ -157,7 +189,7 @@ class CommunityCenterScreen extends StatefulWidget {
       await _service.createPost(
         caption: _captionController.text.trim(),
         photo: _photo,
-        author: (user?.email ?? 'test-user'),
+        author: refreshedUser.email ?? 'community member',
         sensors: SensorSnapshot(lowFood: _tagFoodLow, clogged: _tagClogged, cleaningDue: _tagCleaningDue),
         weather: _weather,
       );
@@ -170,14 +202,6 @@ class CommunityCenterScreen extends StatefulWidget {
     } finally {
       setState(() => _loading = false);
     }
-  }
-
-  Future<void> _toggleTestMode(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('pref_community_test', value);
-    await _service.toggleTestMode(value);
-    setState(() => _testMode = value);
-    await _refresh();
   }
 
   Future<void> _askAiGeneral() async {
@@ -226,7 +250,9 @@ class CommunityCenterScreen extends StatefulWidget {
           ),
           const SizedBox(height: 8),
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeInOutCubicEmphasized,
+            switchOutCurve: Curves.easeInOutCubic,
             child: _loadingPosts
                 ? _buildSkeletonFeed()
                 : _posts.isEmpty
@@ -234,7 +260,7 @@ class CommunityCenterScreen extends StatefulWidget {
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Text(
-                            _status.isNotEmpty ? _status : 'No posts yet. Test mode keeps data locally.',
+                            _status.isNotEmpty ? _status : 'No posts yet. Sign in and start the first thread.',
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -329,46 +355,38 @@ class CommunityCenterScreen extends StatefulWidget {
   Widget _metaRow(User? user) {
     return Column(
       children: [
-          Card(
-            child: SwitchListTile(
-              title: const Text('Community Test Mode'),
-              subtitle: const Text('Sandbox collection + emulator friendly'),
-              value: _testMode,
-              onChanged: _toggleTestMode,
-              secondary: const Icon(Icons.science_outlined),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.verified_user),
+            title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
+            subtitle: const Text('Secure email/password auth via Firebase'),
+            trailing: OutlinedButton.icon(onPressed: _ensureAuthenticated, icon: const Icon(Icons.login), label: const Text('Login')),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.auto_awesome),
+            title: const Text('AI model'),
+            subtitle: Text(_aiModels
+                    .firstWhere((m) => m['value'] == _aiModel, orElse: () => {'label': _aiModel})['label'] ??
+                _aiModel),
+            trailing: DropdownButton<String>(
+              value: _aiModels.any((m) => m['value'] == _aiModel) ? _aiModel : _aiModels.first['value'],
+              items: _aiModels
+                  .map((m) => DropdownMenuItem<String>(
+                        value: m['value'],
+                        child: Text(m['label'] ?? m['value']!),
+                      ))
+                  .toList(),
+              onChanged: (val) async {
+                if (val == null) return;
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('pref_ai_model', val);
+                setState(() => _aiModel = val);
+              },
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('AI model'),
-              subtitle: Text(_aiModels
-                      .firstWhere((m) => m['value'] == _aiModel,
-                          orElse: () => {'label': _aiModel})['label'] ??
-                  _aiModel),
-              trailing: DropdownButton<String>(
-                value: _aiModels.any((m) => m['value'] == _aiModel)
-                    ? _aiModel
-                    : _aiModels.first['value'],
-                items: _aiModels
-                    .map((m) => DropdownMenuItem<String>(
-                          value: m['value'],
-                          child: Text(m['label'] ?? m['value']!),
-                        ))
-                    .toList(),
-                onChanged: _setAiModel,
-              ),
-            ),
-          ),
-          if (!_testMode)
-            Card(
-              child: ListTile(
-              leading: const Icon(Icons.verified_user),
-              title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
-              subtitle: const Text('Email/password auth via Firebase emulators by default'),
-              trailing: OutlinedButton.icon(onPressed: _loginOrSignUp, icon: const Icon(Icons.login), label: const Text('Login')),
-            ),
-          ),
+        ),
         Card(
           child: ListTile(
             leading: const Icon(Icons.cloud_queue),
@@ -377,10 +395,21 @@ class CommunityCenterScreen extends StatefulWidget {
                 ? '${_weather!.temperatureC.toStringAsFixed(1)}°C • ${_weather!.humidity.toStringAsFixed(0)}% • ${_weather!.condition}'
                 : _loadingWeather
                     ? 'Loading weather...'
-                    : 'Mock weather used until API key ready'),
+                    : (widget.locationStatus ?? 'Grant location to tag posts with real conditions')),
             trailing: IconButton(onPressed: _refreshWeather, icon: const Icon(Icons.refresh)),
           ),
         ),
+        if (widget.latitude == null || widget.longitude == null)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.my_location),
+              title: const Text('Location needed'),
+              subtitle: Text(widget.locationStatus ?? 'Request access to tag posts with real weather.'),
+              trailing: widget.onRequestLocation != null
+                  ? ElevatedButton(onPressed: widget.onRequestLocation, child: const Text('Grant access'))
+                  : null,
+            ),
+          ),
       ],
     );
   }
@@ -419,11 +448,6 @@ class CommunityCenterScreen extends StatefulWidget {
                   onPressed: _pickPhoto,
                   icon: const Icon(Icons.photo_library_outlined),
                   label: Text(_photo == null ? 'Add photo' : 'Change photo'),
-                ),
-                ActionChip(
-                  avatar: Icon(_testMode ? Icons.safety_check : Icons.cloud_done, color: Theme.of(context).colorScheme.primary),
-                  label: Text(_testMode ? 'Posting to sandbox' : 'Live collection'),
-                  onPressed: () => _toggleTestMode(!_testMode),
                 ),
                 if (_photo != null)
                   Chip(label: Text(_photo!.path.split('/').last), avatar: const Icon(Icons.check_circle, size: 18)),
@@ -506,10 +530,6 @@ class CommunityCenterScreen extends StatefulWidget {
                               style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
                         ],
                       ),
-                    ),
-                    Chip(
-                      label: Text(_testMode ? 'Sandbox' : 'Live'),
-                      avatar: Icon(_testMode ? Icons.science_outlined : Icons.public, size: 16),
                     ),
                   ],
                 ),

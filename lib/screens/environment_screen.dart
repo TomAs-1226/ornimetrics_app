@@ -7,10 +7,20 @@ import '../services/notifications_service.dart';
 import '../services/weather_provider.dart';
 
 class EnvironmentScreen extends StatefulWidget {
-  const EnvironmentScreen({super.key, required this.provider, this.onSwapProvider});
+  const EnvironmentScreen({
+    super.key,
+    required this.provider,
+    required this.latitude,
+    required this.longitude,
+    this.locationStatus,
+    this.onRequestLocation,
+  });
 
   final WeatherProvider provider;
-  final void Function()? onSwapProvider;
+  final double? latitude;
+  final double? longitude;
+  final String? locationStatus;
+  final VoidCallback? onRequestLocation;
 
   @override
   State<EnvironmentScreen> createState() => _EnvironmentScreenState();
@@ -34,8 +44,18 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
       _loading = true;
       _error = null;
     });
+    if (widget.latitude == null || widget.longitude == null) {
+      setState(() {
+        _error = widget.locationStatus ?? 'Location permission required to load weather.';
+        _loading = false;
+      });
+      return;
+    }
     try {
-      final res = await widget.provider.fetchCurrent();
+      final res = await widget.provider.fetchCurrent(
+        latitude: widget.latitude!,
+        longitude: widget.longitude!,
+      );
       await MaintenanceRulesEngine.instance.applyWeather(
         res,
         NotificationsService.instance.preferences.value,
@@ -94,11 +114,22 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.cloud_queue),
-              title: Text(widget.provider is MockWeatherProvider ? 'Mock Weather Provider' : 'Real Weather Provider'),
-              subtitle: const Text('Swap once API key is ready. Mock works immediately.'),
-              trailing: widget.onSwapProvider != null
-                  ? ElevatedButton(onPressed: widget.onSwapProvider, child: const Text('Switch'))
+              leading: const Icon(Icons.my_location),
+              title: Text(
+                widget.latitude != null ? 'Location secured' : 'Location needed',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                widget.locationStatus ??
+                    (widget.latitude != null
+                        ? 'Using current GPS coordinates for weather + history.'
+                        : 'Grant location access to attach real weather to your feed.'),
+              ),
+              trailing: widget.onRequestLocation != null
+                  ? ElevatedButton(
+                      onPressed: widget.onRequestLocation,
+                      child: const Text('Request access'),
+                    )
                   : null,
             ),
           ),

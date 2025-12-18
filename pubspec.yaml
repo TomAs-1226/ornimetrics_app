@@ -46,6 +46,7 @@ dependencies:
      # key-value storage plugin
   flutter_local_notifications: ^17.2.1
      # local notifications for feeder progress and alerts
+  geolocator: ^12.0.0
 
 # App Icon
 flutter_launcher_icons:

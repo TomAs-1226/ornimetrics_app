@@ -1,35 +1,34 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart'; // for ValueListenableBuilder
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:pie_chart/pie_chart.dart';
-import 'package:file_selector/file_selector.dart';
-import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'firebase_options.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:ui' as ui;
 import 'dart:typed_data';
-import 'dart:async';
-import 'dart:convert'; // provides both json and base64
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:io';
+import 'dart:ui' as ui;
 
-import 'services/notifications_service.dart';
-import 'services/maintenance_rules_engine.dart';
-import 'services/food_level_provider.dart';
-import 'services/weather_provider.dart';
-import 'screens/environment_screen.dart';
-import 'screens/community_center_screen.dart';
-import 'screens/notification_center_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart'; // for ValueListenableBuilder
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:pie_chart/pie_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'firebase_options.dart';
 import 'models/weather_models.dart';
+import 'screens/community_center_screen.dart';
+import 'screens/environment_screen.dart';
+import 'screens/notification_center_screen.dart';
+import 'services/location_service.dart';
+import 'services/maintenance_rules_engine.dart';
+import 'services/notifications_service.dart';
+import 'services/weather_provider.dart';
 
 
 // Global theme mode notifier
@@ -170,40 +169,6 @@ void safeSelectionHaptic() {
   }
 }
 
-const bool kUseEmulatorsByDefault = false;
-
-Future<bool> _isPortOpen(String host, int port) async {
-  try {
-    final socket = await Socket.connect(host, port, timeout: const Duration(milliseconds: 400));
-    socket.destroy();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-Future<bool> _configureFirebaseEmulators() async {
-  final host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
-  final ports = [8080, 9199, 9099, 9000];
-  final checks = await Future.wait(ports.map((p) => _isPortOpen(host, p)));
-  if (checks.contains(false)) {
-    debugPrint('[firebase] Emulators not reachable on $host; using production backends.');
-    return false;
-  }
-
-  final db = FirebaseDatabase.instanceFor(
-    app: Firebase.app(),
-    databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
-  );
-
-  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-  FirebaseStorage.instance.useStorageEmulator(host, 9199);
-  FirebaseAuth.instance.useAuthEmulator(host, 9099);
-  db.useDatabaseEmulator(host, 9000);
-  debugPrint('[firebase] Emulators configured for $host.');
-  return true;
-}
-
 FirebaseDatabase primaryDatabase() {
   return FirebaseDatabase.instanceFor(
     app: Firebase.app(),
@@ -256,12 +221,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
   await _ensureFirebaseInitialized();
-  final envWantsEmulators = dotenv.env['USE_EMULATORS']?.toLowerCase() == 'true';
-  if (kDebugMode && envWantsEmulators) {
-    await _configureFirebaseEmulators();
-  } else {
-    debugPrint('[firebase] Using production backends for realtime database and firestore.');
-  }
+  debugPrint('[firebase] Using production backends for realtime database and firestore.');
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();
@@ -282,9 +242,6 @@ void main() async {
 
   await NotificationsService.instance.load();
   await MaintenanceRulesEngine.instance.load();
-  if (kDebugMode) {
-    await NotificationsService.instance.startFoodLevelTracking(MockFoodLevelProvider());
-  }
 
   runApp(const WildlifeApp());
 }
@@ -482,29 +439,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
             const SizedBox(height: 8),
             Text(
-              'Configure low food, clog, and cleaning reminders. Simulate alerts to verify without hardware.',
+              'Configure low food, clog, and cleaning reminders. Alerts will flow from your production device telemetry.',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: service.simulateLowFood,
-                  icon: const Icon(Icons.warning_amber_outlined),
-                  label: const Text('Low food'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: service.simulateClogged,
-                  icon: const Icon(Icons.block),
-                  label: const Text('Clogged'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: service.triggerCleaningCheck,
-                  icon: const Icon(Icons.cleaning_services_outlined),
-                  label: const Text('Cleaning due'),
-                ),
-              ],
             ),
           ],
         ),
@@ -533,8 +469,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   DateTime? _lastUpdated;
   int _lastUsageCount = 0;
   DateTime? _lastUsageSampleAt;
-  bool _useMockWeather = true;
-  WeatherProvider _weatherProvider = MockWeatherProvider();
+  WeatherProvider _weatherProvider = RealWeatherProvider(
+    apiKey: dotenv.env['WEATHER_API_KEY'] ?? '',
+    endpoint: dotenv.env['WEATHER_ENDPOINT'] ?? 'https://api.weatherapi.com/v1',
+  );
+  Position? _position;
+  String? _locationStatus;
+  bool _requestingLocation = false;
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -574,34 +515,36 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     await prefs.setInt('pref_ai_photo_limit', _aiPhotoLimit);
   }
 
-  Future<void> _loadWeatherPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final useMock = prefs.getBool('pref_weather_use_mock') ?? true;
+  Future<void> _captureLocation({bool force = false}) async {
+    if (_requestingLocation) return;
+    if (!force && _position != null) return;
     setState(() {
-      _useMockWeather = useMock;
-      _weatherProvider = useMock
-          ? MockWeatherProvider()
-          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+      _requestingLocation = true;
+      _locationStatus = 'Requesting GPS permission...';
     });
-  }
-
-  Future<void> _toggleWeatherProvider() async {
-    final next = !_useMockWeather;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('pref_weather_use_mock', next);
-    setState(() {
-      _useMockWeather = next;
-      _weatherProvider = next
-          ? MockWeatherProvider()
-          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
-    });
+    try {
+      await LocationService.instance.ensureReady();
+      final pos = await LocationService.instance.currentPosition(forceUpdate: force);
+      if (!mounted) return;
+      setState(() {
+        _position = pos;
+        _locationStatus = pos == null ? 'Location unavailable. Check permissions.' : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _locationStatus = 'Location error: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _requestingLocation = false);
+      }
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _fetchTodaySummaryFlexible();
-    _fetchPhotoSnapshots();
     _scrollController.addListener(_updateFabVisibility);
     _recentScrollController.addListener(_updateFabVisibility);
     autoRefreshEnabledNotifier.addListener(_updateAutoRefresh);
@@ -610,7 +553,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
-    _loadWeatherPrefs();
+    _captureLocation().then((_) {
+      _fetchTodaySummaryFlexible();
+      _fetchPhotoSnapshots();
+    });
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
@@ -777,6 +723,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _refreshAll() async {
+    await _captureLocation();
     await Future.wait([
       _fetchPhotoSnapshots(),
       _fetchTodaySummaryFlexible(),
@@ -784,6 +731,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchPhotoSnapshots() async {
+    await _captureLocation();
     final ref = primaryDatabase().ref(kPhotoFeedPath);
     try {
       DataSnapshot snap;
@@ -834,28 +782,16 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       // Always sort newest first (covers fallback path too)
       items.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      WeatherSnapshot? weatherTag;
-      try {
-        weatherTag = await _weatherProvider.fetchCurrent();
-        await MaintenanceRulesEngine.instance.applyWeather(
-          weatherTag,
-          NotificationsService.instance.preferences.value,
-        );
-      } catch (_) {
-        // keep null if provider fails; UI will remain graceful
-      }
-
-      if (weatherTag != null) {
-        for (var i = 0; i < items.length; i++) {
-          items[i] = items[i].withWeather(weatherTag);
-        }
+      if (_position != null) {
+        await _attachWeatherToPhotos(items);
+      } else {
+        _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
       if (!mounted) return;
       setState(() {
         _photos = items;
         _loadingPhotos = false;
-        _photoError = '';
         _photosLastUpdated = DateTime.now();
       });
     } catch (e) {
@@ -865,6 +801,39 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _loadingPhotos = false;
         _photosLastUpdated = DateTime.now();
       });
+    }
+  }
+
+  Future<void> _attachWeatherToPhotos(List<DetectionPhoto> items) async {
+    if (_position == null) return;
+    final cache = <String, WeatherSnapshot>{};
+
+    for (final photo in items) {
+      final dayHourKey = DateFormat('yyyy-MM-dd-HH').format(photo.timestamp.toUtc());
+      if (!cache.containsKey(dayHourKey)) {
+        try {
+          final snap = await _weatherProvider.fetchHistorical(
+            timestamp: photo.timestamp,
+            latitude: _position!.latitude,
+            longitude: _position!.longitude,
+          );
+          cache[dayHourKey] = snap;
+          await MaintenanceRulesEngine.instance.applyWeather(
+            snap,
+            NotificationsService.instance.preferences.value,
+          );
+        } catch (e) {
+          _photoError = 'Weather lookup failed for some items: $e';
+        }
+      }
+
+      final tag = cache[dayHourKey];
+      if (tag != null) {
+        final idx = items.indexOf(photo);
+        if (idx != -1) {
+          items[idx] = items[idx].withWeather(tag);
+        }
+      }
     }
   }
 
@@ -1124,7 +1093,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             _buildDashboardTab(),
             _buildRecentDetectionsTab(),
             _buildEnvironmentTab(),
-            const CommunityCenterScreen(),
+            CommunityCenterScreen(
+              weatherProvider: _weatherProvider,
+              latitude: _position?.latitude,
+              longitude: _position?.longitude,
+              locationStatus: _locationStatus,
+              onRequestLocation: () => _captureLocation(force: true),
+            ),
           ],
         ),
         floatingActionButton: _showFab
@@ -3291,7 +3266,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget _buildEnvironmentTab() {
     return EnvironmentScreen(
       provider: _weatherProvider,
-      onSwapProvider: _toggleWeatherProvider,
+      latitude: _position?.latitude,
+      longitude: _position?.longitude,
+      locationStatus: _locationStatus,
+      onRequestLocation: () => _captureLocation(force: true),
     );
   }
 
@@ -3341,8 +3319,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
-    )
-        .then((_) => _loadWeatherPrefs());
+    );
   }
 }
 
@@ -4091,7 +4068,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoRefreshEnabled = false;
   double _autoRefreshInterval = 60.0; // seconds
   String _selectedAiModel = 'gpt-4o-mini';
-  bool _useMockWeather = true;
   Color _seedColor = Colors.green;
 
   bool get _darkMode => themeNotifier.value == ThemeMode.dark;
@@ -4111,7 +4087,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoRefreshEnabled = prefs.getBool('pref_auto_refresh_enabled') ?? false;
       _autoRefreshInterval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
       _selectedAiModel = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
-      _useMockWeather = prefs.getBool('pref_weather_use_mock') ?? true;
       final seedValue = prefs.getInt('pref_seed_color');
       if (seedValue != null) {
         _seedColor = Color(seedValue);
@@ -4263,22 +4238,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('Feeder notifications'),
-            subtitle: const Text('Configure alerts + simulate issues'),
+            subtitle: const Text('Configure production alerts'),
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
             },
             trailing: const Icon(Icons.chevron_right),
-          ),
-          SwitchListTile(
-            title: const Text('Use mock weather provider'),
-            subtitle: const Text('Disable when a real API key is configured'),
-            value: _useMockWeather,
-            onChanged: (val) async {
-              safeLightHaptic();
-              setState(() => _useMockWeather = val);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('pref_weather_use_mock', val);
-            },
           ),
           const Divider(),
           ListTile(

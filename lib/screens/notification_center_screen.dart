@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -17,8 +16,6 @@ class NotificationCenterScreen extends StatefulWidget {
 class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   final _service = NotificationsService.instance;
   final _engine = MaintenanceRulesEngine.instance;
-  MockFoodLevelProvider? _mockFoodProvider;
-  bool _draining = false;
 
   @override
   void initState() {
@@ -141,8 +138,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           const SizedBox(height: 12),
           _foodLevelCard(),
           const SizedBox(height: 12),
-          if (kDebugMode) _debugCard(),
-          const SizedBox(height: 12),
           const Text('Recent notification events', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           ValueListenableBuilder<List<NotificationEvent>>(
@@ -152,7 +147,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text('No notifications yet. Use simulate buttons above to test.'),
+                    child: Text('No notifications yet. Connect your feeder to start receiving production alerts.'),
                   ),
                 );
               }
@@ -388,98 +383,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 const SizedBox(height: 8),
                 Text(
                   reading == null
-                      ? 'Mock sensor can be started from debug tools.'
+                      ? 'Connect your production food-level sensor to surface alerts here.'
                       : 'Last update: ${DateFormat('hh:mm:ss a').format(reading.timestamp)}',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
-                if (kDebugMode)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _toggleDrain,
-                      icon: Icon(_draining ? Icons.pause_circle_outline : Icons.play_circle_outline),
-                      label: Text(_draining ? 'Stop mock drain' : 'Simulate draining'),
-                    ),
-                  )
               ],
             ),
           ),
         );
       },
     );
-  }
-
-  Widget _debugCard() {
-    return ValueListenableBuilder<NotificationPreferences>(
-      valueListenable: _service.preferences,
-      builder: (_, prefs, __) {
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Test / debug (dev-only)', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => _service.simulateLowFood(),
-                      icon: const Icon(Icons.warning_amber),
-                      label: const Text('Low food'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _service.simulateClogged(),
-                      icon: const Icon(Icons.block),
-                      label: const Text('Clogged'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _service.triggerCleaningCheck(),
-                      icon: const Icon(Icons.cleaning_services_outlined),
-                      label: const Text('Cleaning due'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateHeavyUse(prefs),
-                      icon: const Icon(Icons.fitness_center_outlined),
-                      label: const Text('Sim heavy use'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Rain', prefs: prefs),
-                      icon: const Icon(Icons.umbrella),
-                      label: const Text('Rain event'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Snow', prefs: prefs),
-                      icon: const Icon(Icons.ac_unit_outlined),
-                      label: const Text('Snow event'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Hail', prefs: prefs),
-                      icon: const Icon(Icons.cloudy_snowing),
-                      label: const Text('Hail event'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _toggleDrain() async {
-    if (_draining) {
-      await _service.stopFoodLevelTracking();
-      await _mockFoodProvider?.dispose();
-      setState(() => _draining = false);
-      return;
-    }
-    _mockFoodProvider = MockFoodLevelProvider(startPercent: _service.preferences.value.lowFoodThresholdPercent + 40);
-    await _service.startFoodLevelTracking(_mockFoodProvider!);
-    setState(() => _draining = true);
   }
 
   IconData _iconForType(NotificationType type) {
