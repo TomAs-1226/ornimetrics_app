@@ -533,7 +533,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _locationStatus = 'Location error: $e';
+        _locationStatus = 'Location error: ${e.toString().split('\n').first}';
       });
     } finally {
       if (mounted) {
@@ -808,31 +808,47 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     if (_position == null) return;
     final cache = <String, WeatherSnapshot>{};
 
-    for (final photo in items) {
-      final dayHourKey = DateFormat('yyyy-MM-dd-HH').format(photo.timestamp.toUtc());
-      if (!cache.containsKey(dayHourKey)) {
+    // Fetch per unique hour to avoid hammering the API and the UI thread.
+    final uniqueKeys = items
+        .take(50) // cap to prevent excessive parallel work on large feeds
+        .map((p) => DateFormat('yyyy-MM-dd-HH').format(p.timestamp.toUtc()))
+        .toSet()
+        .toList();
+
+    final futures = uniqueKeys.map((key) async {
+      final parts = key.split('-');
+      final ts = DateTime.parse('${parts[0]}-${parts[1]}-${parts[2]} ${parts[3]}:00:00Z');
+      try {
+        cache[key] = await _weatherProvider.fetchHistorical(
+          timestamp: ts.toUtc(),
+          latitude: _position!.latitude,
+          longitude: _position!.longitude,
+        );
+      } catch (_) {
+        // Fallback to current weather if history is missing; better than blocking UI.
         try {
-          final snap = await _weatherProvider.fetchHistorical(
-            timestamp: photo.timestamp,
+          cache[key] = await _weatherProvider.fetchCurrent(
             latitude: _position!.latitude,
             longitude: _position!.longitude,
           );
-          cache[dayHourKey] = snap;
-          await MaintenanceRulesEngine.instance.applyWeather(
-            snap,
-            NotificationsService.instance.preferences.value,
-          );
         } catch (e) {
-          _photoError = 'Weather lookup failed for some items: $e';
+          _photoError = 'Weather lookup failed for some items: ${e.toString().split('\n').first}';
         }
       }
+    }).toList();
 
-      final tag = cache[dayHourKey];
+    await Future.wait(futures);
+
+    // Apply cached tags back to items.
+    for (var i = 0; i < items.length; i++) {
+      final key = DateFormat('yyyy-MM-dd-HH').format(items[i].timestamp.toUtc());
+      final tag = cache[key];
       if (tag != null) {
-        final idx = items.indexOf(photo);
-        if (idx != -1) {
-          items[idx] = items[idx].withWeather(tag);
-        }
+        items[i] = items[i].withWeather(tag);
+        await MaintenanceRulesEngine.instance.applyWeather(
+          tag,
+          NotificationsService.instance.preferences.value,
+        );
       }
     }
   }

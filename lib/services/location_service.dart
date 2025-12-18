@@ -26,7 +26,17 @@ class LocationService {
       return;
     }
 
-    final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    Position? pos;
+
+    // Quick win: try cached location first.
+    pos = await Geolocator.getLastKnownPosition();
+
+    // If no cached reading, fetch a fresh, time-limited reading to avoid ANRs.
+    pos ??= await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 8),
+    );
+
     position.value = pos;
   }
 

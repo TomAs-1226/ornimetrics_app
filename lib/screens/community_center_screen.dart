@@ -266,7 +266,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                         ),
                       )
                     : Column(
-                        children: _posts.map(_buildPostTile).toList(),
+                        children: _posts
+                            .map((p) => AnimatedSize(
+                                  duration: const Duration(milliseconds: 180),
+                                  curve: Curves.easeInOut,
+                                  child: _buildPostTile(p),
+                                ))
+                            .toList(),
                       ),
           )
         ],

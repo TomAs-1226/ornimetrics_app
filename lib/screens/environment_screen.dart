@@ -103,6 +103,8 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
           const SizedBox(height: 12),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
             child: _loading
                 ? _buildLoadingCard()
                 : _error != null
