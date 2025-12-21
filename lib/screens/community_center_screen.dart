@@ -60,6 +60,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   bool _tagFoodLow = false;
   bool _tagClogged = false;
   bool _tagCleaningDue = false;
+  bool _showAdvancedTrends = false;
 
   @override
   void initState() {
@@ -467,7 +468,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
             leading: const Icon(Icons.verified_user),
             title: Text(user != null ? 'Signed in as ${user.email}' : 'Not signed in'),
             subtitle: const Text('Secure email/password auth via Firebase'),
-            trailing: OutlinedButton.icon(onPressed: _ensureAuthenticated, icon: const Icon(Icons.login), label: const Text('Login')),
+            trailing: user == null
+                ? OutlinedButton.icon(
+                    onPressed: _ensureAuthenticated, icon: const Icon(Icons.login), label: const Text('Login'))
+                : TextButton.icon(
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                      if (mounted) setState(() => _status = 'Signed out');
+                    },
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign out'),
+                  ),
           ),
         ),
         if (_biometricAvailable)

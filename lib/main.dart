@@ -508,6 +508,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   bool _trendAiLoading = false;
   String? _trendAiInsight;
   List<TrendSignal> _trendSignals = [];
+  bool _showAdvancedTrends = false;
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -920,8 +921,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       });
     }
 
-    final list = signals.values.where((s) => s.delta != 0).toList()
-      ..sort((a, b) => b.delta.abs().compareTo(a.delta.abs()));
+    final list = signals.values.toList()
+      ..sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
     return list.take(5).toList();
   }
 
@@ -3148,6 +3149,16 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
               children: [
                 const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 const Spacer(),
+                TextButton.icon(
+                  onPressed: _trendSignals.isEmpty
+                      ? null
+                      : () {
+                          setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+                        },
+                  icon: const Icon(Icons.analytics_outlined),
+                  label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   icon: _trendAiLoading
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -3195,6 +3206,30 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
+                  if (_showAdvancedTrends) ...[
+                    const SizedBox(height: 12),
+                    Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _trendSignals.map((s) {
+                        final pct = (s.changeRate * 100).toStringAsFixed(1);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6.0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                  child: Text(
+                                _formatSpeciesName(s.species),
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              )),
+                              Text('Δ ${s.delta} (${pct}%)'),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ]
                 ],
               ),
             if (_trendAiInsight != null) ...[
