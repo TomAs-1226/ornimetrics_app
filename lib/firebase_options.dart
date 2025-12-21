@@ -1,14 +1,11 @@
-// This file should be regenerated with `flutterfire configure` so that it
-// exactly matches your google-services.json / GoogleService-Info.plist.
-// Do NOT hand-edit production keys; placeholder values are included to ensure
-// the app fails fast if you forget to configure Firebase properly.
+// FlutterFire configuration placeholder.
+// Run `flutterfire configure` to regenerate this file with real values that
+// match your google-services.json / GoogleService-Info.plist. Do not hand-edit
+// production keys in code.
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
-// Replace these placeholder strings by running `flutterfire configure`.
-// If you keep the placeholders, _ensureFirebaseInitialized in main.dart will
-// throw a descriptive error to avoid mysterious Auth failures.
 const String _androidApiKey = 'REPLACE_ME_ANDROID_API_KEY';
 const String _androidAppId = 'REPLACE_ME_ANDROID_APP_ID';
 const String _webApiKey = 'REPLACE_ME_WEB_API_KEY';
