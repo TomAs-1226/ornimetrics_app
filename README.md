@@ -16,7 +16,8 @@ After logging in, you can prime a real project (rules + indexes + storage) with:
 If you omit the project id the script will prompt once. It writes `firebase.json`, rules, emulator config, and deploys basics. If `flutterfire` CLI is available it auto-generates `lib/firebase_options.dart`; otherwise the existing file is reused.
 
 ## Production readiness
-- Run `flutterfire configure` to regenerate **lib/firebase_options.dart** and replace the stubbed `android/app/google-services.json` and `GoogleService-Info.plist` with the real files for your Firebase project. Keep Firebase keys out of `.env` to avoid desync.
+- Run `flutterfire configure` to regenerate **lib/firebase_options.dart** and replace the stubbed `android/app/google-services.json` (with real API key/app id) and `GoogleService-Info.plist` with files for your Firebase project. Keep Firebase keys out of `.env` to avoid desync.
+- In `android/app/build.gradle` make sure `applicationId` matches the `package_name` inside `google-services.json`. Use the same Firebase project for Auth + Storage; enable Email/Password in Firebase Auth.
 - Deploy the RTDB/Firestore/Storage rules in `database.rules.json`, `firestore.rules`, and `storage.rules` to keep community login and media secure. Enable Email/Password Auth in Firebase for the Community Center.
 - For community uploads, optionally set `COMMUNITY_STORAGE_BUCKET` in `.env` if you want a dedicated bucket; otherwise the Firebase project’s default bucket is used. Weather still uses `WEATHER_API_KEY` / `WEATHER_ENDPOINT` in `.env`.
 - Location permissions are requested on launch to tag photos and the gallery with accurate current + historical weather. Ensure your Firebase project allows HTTPS calls to the configured weather provider.
