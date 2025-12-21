@@ -224,7 +224,7 @@ Future<FirebaseApp> _ensureFirebaseInitialized() async {
     opts.storageBucket,
     opts.messagingSenderId,
   ];
-  if (placeholders.any((e) => e.startsWith('REPLACE_ME'))) {
+  if (placeholders.any((e) => (e ?? '').startsWith('REPLACE_ME'))) {
     throw StateError(
       'Firebase configuration is missing. Regenerate lib/firebase_options.dart with "flutterfire configure" '
       'and use matching google-services.json / GoogleService-Info.plist.',

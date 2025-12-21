@@ -46,6 +46,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   final AiProvider _ai = RealAiProvider();
   final _captionController = TextEditingController();
   final LocalAuthentication _localAuth = LocalAuthentication();
+  final ScrollController _listController = ScrollController();
 
   List<CommunityPost> _posts = <CommunityPost>[];
   WeatherSnapshot? _weather;
@@ -74,6 +75,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   @override
   void dispose() {
     _captionController.dispose();
+    _listController.dispose();
     super.dispose();
   }
 
@@ -334,49 +336,69 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
         await _refresh();
         await _refreshWeather();
       },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Stack(
         children: [
-          _header(),
-          const SizedBox(height: 12),
-          _metaRow(user),
-          const SizedBox(height: 12),
-          _composer(),
-          const SizedBox(height: 16),
-          Row(
-            children: const [
-              Icon(Icons.forum_outlined),
-              SizedBox(width: 8),
-              Text('Forum threads', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ListView(
+            controller: _listController,
+            padding: const EdgeInsets.all(16),
+            children: [
+              _header(),
+              const SizedBox(height: 12),
+              _metaRow(user),
+              const SizedBox(height: 12),
+              _composer(),
+              const SizedBox(height: 16),
+              Row(
+                children: const [
+                  Icon(Icons.forum_outlined),
+                  SizedBox(width: 8),
+                  Text('Forum threads', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeInOutCubicEmphasized,
+                switchOutCurve: Curves.easeInOutCubic,
+                child: _loadingPosts
+                    ? _buildSkeletonFeed()
+                    : _posts.isEmpty
+                        ? Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                _status.isNotEmpty ? _status : 'No posts yet. Sign in and start the first thread.',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          )
+                        : Column(
+                            children: _posts
+                                .map((p) => AnimatedSize(
+                                      duration: const Duration(milliseconds: 180),
+                                      curve: Curves.easeInOut,
+                                      child: _buildPostTile(p),
+                                    ))
+                                .toList(),
+                          ),
+              )
             ],
           ),
-          const SizedBox(height: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            switchInCurve: Curves.easeInOutCubicEmphasized,
-            switchOutCurve: Curves.easeInOutCubic,
-            child: _loadingPosts
-                ? _buildSkeletonFeed()
-                : _posts.isEmpty
-                    ? Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            _status.isNotEmpty ? _status : 'No posts yet. Sign in and start the first thread.',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      )
-                    : Column(
-                        children: _posts
-                            .map((p) => AnimatedSize(
-                                  duration: const Duration(milliseconds: 180),
-                                  curve: Curves.easeInOut,
-                                  child: _buildPostTile(p),
-                                ))
-                            .toList(),
-                      ),
-          )
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton.small(
+              heroTag: 'communityTop',
+              onPressed: () {
+                _listController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic,
+                );
+              },
+              child: const Icon(Icons.arrow_upward),
+            ),
+          ),
         ],
       ),
     );
