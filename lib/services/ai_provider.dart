@@ -66,7 +66,7 @@ class RealAiProvider implements AiProvider {
           .map((m) => {
                 'role': _mapRole(m.role),
                 'content': [
-                  {'type': 'text', 'text': m.content}
+                  {'type': 'input_text', 'text': m.content}
                 ]
               })
           .toList();
