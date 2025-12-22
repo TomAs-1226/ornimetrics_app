@@ -52,7 +52,10 @@ class CommunityService {
       for (final child in snap.children) {
         final value = child.value;
         if (value is Map) {
-          posts.add(CommunityPost.fromRealtime(child.key ?? '', Map<dynamic, dynamic>.from(value)));
+          final normalized = Map<String, dynamic>.from(
+            value.map((k, v) => MapEntry(k.toString(), v)),
+          );
+          posts.add(CommunityPost.fromRealtime(child.key ?? '', normalized));
         } else {
           // ignore: avoid_print
           print('community_posts parse skipped: key=${child.key}, type=${value.runtimeType}');
@@ -63,7 +66,10 @@ class CommunityService {
       final data = Map<dynamic, dynamic>.from(snap.value as Map);
       data.forEach((key, value) {
         if (value is Map) {
-          posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
+          final normalized = Map<String, dynamic>.from(
+            value.map((k, v) => MapEntry(k.toString(), v)),
+          );
+          posts.add(CommunityPost.fromRealtime(key.toString(), normalized));
         } else {
           // ignore: avoid_print
           print('community_posts parse skipped: key=$key, type=${value.runtimeType}');
@@ -74,7 +80,10 @@ class CommunityService {
       for (int i = 0; i < list.length; i++) {
         final value = list[i];
         if (value is Map) {
-          posts.add(CommunityPost.fromRealtime(i.toString(), Map<dynamic, dynamic>.from(value)));
+          final normalized = Map<String, dynamic>.from(
+            value.map((k, v) => MapEntry(k.toString(), v)),
+          );
+          posts.add(CommunityPost.fromRealtime(i.toString(), normalized));
         } else {
           // ignore: avoid_print
           print('community_posts parse skipped: index=$i, type=${value.runtimeType}');
@@ -215,7 +224,9 @@ class _SerializableSnapshot {
     final List<Map<String, dynamic>> out = [];
     for (final child in snap.children) {
       if (child.value is Map) {
-        final m = Map<String, dynamic>.from(child.value as Map);
+        final m = Map<String, dynamic>.from(
+          (child.value as Map).map((k, v) => MapEntry(k.toString(), v)),
+        );
         m['_id'] = child.key;
         out.add(m);
       }
