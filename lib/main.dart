@@ -909,26 +909,23 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     }
 
     final sortedDays = perDay.keys.toList()..sort();
-    if (sortedDays.length < 2) return [];
+    if (sortedDays.isEmpty) return [];
 
-    final Map<String, TrendSignal> signals = {};
-    for (final day in sortedDays) {
-      final counts = perDay[day]!;
-      counts.forEach((species, count) {
-        signals.putIfAbsent(species, () => TrendSignal(species: species, start: 0, end: 0));
-        final signal = signals[species]!;
-        if (day == sortedDays.first) {
-          signals[species] = TrendSignal(species: species, start: count, end: signal.end);
-        }
-        if (day == sortedDays.last) {
-          signals[species] = TrendSignal(species: species, start: signal.start, end: count);
-        }
-      });
-    }
+    // Smooth the trend by comparing the early and late halves of the window (up to 3-day averages).
+    final Set<String> allSpecies = perDay.values.expand((m) => m.keys).toSet();
+    final int window = math.min(3, sortedDays.length);
 
-    final list = signals.values.toList()
-      ..sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
-    return list.take(5).toList();
+    final signals = allSpecies.map((species) {
+      final dayCounts = sortedDays.map((d) => perDay[d]?[species] ?? 0).toList();
+      final startSlice = dayCounts.take(window).toList();
+      final endSlice = dayCounts.skip(dayCounts.length - window).toList();
+      final startAvg = startSlice.isEmpty ? 0 : startSlice.reduce((a, b) => a + b) / startSlice.length;
+      final endAvg = endSlice.isEmpty ? 0 : endSlice.reduce((a, b) => a + b) / endSlice.length;
+      return TrendSignal(species: species, start: startAvg.round(), end: endAvg.round());
+    }).toList();
+
+    signals.sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    return signals.take(5).toList();
   }
 
   Future<void> _generateTrendAiInsight() async {
@@ -3144,107 +3141,125 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Widget _buildTrendsCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: _trendSignals.isEmpty
-                      ? null
-                      : () {
-                          setState(() => _showAdvancedTrends = !_showAdvancedTrends);
-                        },
-                  icon: const Icon(Icons.analytics_outlined),
-                  label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: _trendAiLoading
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.auto_awesome),
-                  tooltip: 'Ask AI for migration insight',
-                  onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
-                )
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (_trendSignals.isEmpty)
-              Text(
-                'Need more data to spot trends. Add snapshots with species labels over several days.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-              )
-            else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(builder: (context, constraints) {
+      final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _trendSignals
-                        .map(
-                          (s) => Chip(
-                            avatar: Icon(
-                              s.direction == 'rising'
-                                  ? Icons.trending_up
-                                  : s.direction == 'falling'
-                                      ? Icons.trending_down
-                                      : Icons.remove,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            label: Text(
-                              '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        )
-                        .toList(),
+                  const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _trendSignals.isEmpty
+                        ? null
+                        : () {
+                            setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+                          },
+                    icon: const Icon(Icons.analytics_outlined),
+                    label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  if (_showAdvancedTrends) ...[
-                    const SizedBox(height: 12),
-                    Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 6),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _trendSignals.map((s) {
-                        final pct = (s.changeRate * 100).toStringAsFixed(1);
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6.0),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                  child: Text(
-                                _formatSpeciesName(s.species),
-                                style: const TextStyle(fontWeight: FontWeight.w700),
-                              )),
-                              Text('Δ ${s.delta} (${pct}%)'),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ]
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: _trendAiLoading
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.auto_awesome),
+                    tooltip: 'Ask AI for migration insight',
+                    onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+                  )
                 ],
               ),
-            if (_trendAiInsight != null) ...[
-              const Divider(height: 20),
-              Text('AI migration insight', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              Text(_trendAiInsight!),
-            ]
-          ],
+              const SizedBox(height: 8),
+              if (_trendSignals.isEmpty)
+                Text(
+                  'Need more data to spot trends. Add snapshots with species labels over several days.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _trendSignals.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                    if (_showAdvancedTrends) ...[
+                      const SizedBox(height: 12),
+                      Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _trendSignals.map((s) => _buildTrendDetailRow(context, s)).toList(),
+                      ),
+                    ]
+                  ],
+                ),
+              if (_trendAiInsight != null) ...[
+                const Divider(height: 20),
+                Text('AI migration insight', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(_trendAiInsight!),
+              ]
+            ],
+          ),
         ),
+      );
+    });
+  }
+
+  Widget _buildTrendChip(BuildContext context, TrendSignal s, double chipMaxWidth) {
+    final icon = s.direction == 'rising'
+        ? Icons.trending_up
+        : s.direction == 'falling'
+            ? Icons.trending_down
+            : Icons.remove;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: chipMaxWidth),
+      child: Chip(
+        avatar: Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+        label: Text(
+          '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+          softWrap: true,
+          overflow: TextOverflow.visible,
+        ),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      ),
+    );
+  }
+
+  Widget _buildTrendDetailRow(BuildContext context, TrendSignal s) {
+    final pct = (s.changeRate * 100).toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _formatSpeciesName(s.species),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Δ ${s.delta} (${pct}%)',
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
       ),
     );
   }

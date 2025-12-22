@@ -37,25 +37,36 @@ class CommunityService {
     WeatherSnapshot? weather,
     String model = 'Ornimetrics O1 feeder',
   }) async {
+    final sanitizedCaption = caption.trim();
+    if (sanitizedCaption.isEmpty && photo == null) {
+      throw FirebaseException(
+        plugin: 'community_service',
+        code: 'invalid-argument',
+        message: 'Add a caption or photo before posting.',
+      );
+    }
+
+    await FirebaseAuth.instance.currentUser?.reload();
     String? uploadedUrl;
     if (photo != null) {
       uploadedUrl = await _storage.uploadCommunityPhoto(file: photo, uid: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous');
     }
 
     try {
-      await _collection.add({
-        ...CommunityPost(
-          id: 'pending',
-          author: author,
-          caption: caption,
-          imageUrl: uploadedUrl,
-          createdAt: DateTime.now(),
-          timeOfDayTag: _timeOfDayFor(DateTime.now()),
-          sensors: sensors,
-          model: model,
-          weather: weather,
-        ).toMap(),
-      });
+      final payload = CommunityPost(
+        id: 'pending',
+        author: author.trim().isEmpty ? 'community member' : author.trim(),
+        caption: sanitizedCaption,
+        imageUrl: uploadedUrl,
+        createdAt: DateTime.now(),
+        timeOfDayTag: _timeOfDayFor(DateTime.now()),
+        sensors: sensors,
+        model: model,
+        weather: weather,
+      ).toMap()
+        ..removeWhere((key, value) => value == null);
+
+      await _collection.add(payload);
     } on FirebaseException catch (e) {
       throw FirebaseException(
         plugin: e.plugin,
