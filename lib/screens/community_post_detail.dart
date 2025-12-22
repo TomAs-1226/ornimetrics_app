@@ -17,7 +17,7 @@ class CommunityPostDetail extends StatefulWidget {
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
   late final AiProvider _ai =
       RealAiProvider(model: widget.aiModel, apiKey: dotenv.env['OPENAI_API_KEY']);
-  final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
+  final List<AiMessage> _messages = [AiMessage('assistant', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
 

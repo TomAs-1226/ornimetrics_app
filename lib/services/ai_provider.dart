@@ -56,9 +56,15 @@ class RealAiProvider implements AiProvider {
         return AiMessage('ai', 'AI key missing. Please set OPENAI_API_KEY in your .env file.');
       }
 
+      String _mapRole(String role) {
+        if (role == 'ai') return 'assistant';
+        if (role == 'assistant' || role == 'system' || role == 'developer' || role == 'user') return role;
+        return 'assistant';
+      }
+
       final inputMessages = history
           .map((m) => {
-                'role': m.role,
+                'role': _mapRole(m.role),
                 'content': [
                   {'type': 'text', 'text': m.content}
                 ]
