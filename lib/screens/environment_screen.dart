@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
 import '../models/weather_models.dart';
@@ -33,10 +35,30 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
   late final AnimationController _controller =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
 
+  static const _kWeatherCacheKey = 'cached_weather_snapshot';
+
   @override
   void initState() {
     super.initState();
+    _restoreCached();
     _load();
+  }
+
+  Future<void> _restoreCached() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kWeatherCacheKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final map = json.decode(raw) as Map<String, dynamic>;
+      final cached = WeatherSnapshot.fromMap(map);
+      if (mounted) {
+        setState(() {
+          _data = cached;
+          _loading = false;
+          _error = null;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -60,9 +82,12 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
         res,
         NotificationsService.instance.preferences.value,
       );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kWeatherCacheKey, json.encode(res.toMap()));
       setState(() => _data = res);
     } catch (e) {
-      setState(() => _error = e.toString());
+      // If we have cached data, keep showing it and surface a message; otherwise show the error card.
+      setState(() => _error = _data != null ? 'Using cached weather. Latest error: ${e.toString()}' : e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
