@@ -29,31 +29,33 @@ class CommunityService {
     return cred.user;
   }
 
+  List<CommunityPost> _parsePosts(DataSnapshot snap) {
+    final List<CommunityPost> posts = [];
+    for (final child in snap.children) {
+      final value = child.value;
+      if (value is Map) {
+        posts.add(CommunityPost.fromRealtime(child.key ?? '', Map<dynamic, dynamic>.from(value)));
+      }
+    }
+    return posts;
+  }
+
   Future<List<CommunityPost>> fetchPosts() async {
     DataSnapshot snap;
     try {
       snap = await _ref.orderByChild('created_at').limitToLast(50).get();
     } catch (_) {
-      // Fallback if the index is missing or ordering fails; still return recent items.
-      snap = await _ref.limitToLast(50).get();
+      snap = await _ref.get();
     }
-    if (snap.value == null) return [];
 
-    final List<CommunityPost> posts = [];
-    if (snap.value is Map) {
-      final data = Map<dynamic, dynamic>.from(snap.value as Map);
-      data.forEach((key, value) {
-        if (value is Map) {
-          posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
-        }
-      });
-    } else if (snap.value is List) {
-      final list = List<dynamic>.from(snap.value as List);
-      for (final value in list) {
-        if (value is Map) {
-          posts.add(CommunityPost.fromRealtime(posts.length.toString(), Map<dynamic, dynamic>.from(value)));
-        }
-      }
+    List<CommunityPost> posts = _parsePosts(snap);
+
+    // Fallback: if ordered query returned empty (e.g., missing index), try plain fetch.
+    if (posts.isEmpty && snap.value != null) {
+      try {
+        final plain = await _ref.get();
+        posts = _parsePosts(plain);
+      } catch (_) {}
     }
 
     posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));

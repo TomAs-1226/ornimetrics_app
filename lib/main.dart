@@ -508,6 +508,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   String? _trendAiInsight;
   List<TrendSignal> _trendSignals = [];
   bool _showAdvancedTrends = false;
+  bool _trendsCollapsed = false;
   Map<String, Map<String, double>> _recentDailyCounts = {};
 
   late final AnimationController _aiAnim;
@@ -755,6 +756,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     setState(() {
       _trendSignals = fromDaily.isNotEmpty ? fromDaily : fallback;
     });
+  }
+
+  List<TrendSignal> _sortedChangingTrends({int? limit}) {
+    final changing = _trendSignals.where((s) => s.delta != 0).toList()
+      ..sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    if (limit == null) return changing;
+    return changing.take(limit).toList();
   }
 
   Future<void> _loadTrendSummaries({int lookbackDays = 14}) async {
@@ -3244,6 +3252,89 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  void _openAllTrendsDialog() {
+    final changing = _sortedChangingTrends();
+    if (changing.isEmpty) return;
+    safeLightHaptic();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            return ListView.builder(
+              controller: controller,
+              padding: const EdgeInsets.all(16),
+              itemCount: changing.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.trending_up),
+                        const SizedBox(width: 8),
+                        const Text('All recent changes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                          label: const Text('Close'),
+                        )
+                      ],
+                    ),
+                  );
+                }
+                final s = changing[i - 1];
+                final pct = (s.changeRate * 100).toStringAsFixed(1);
+                final dir = s.direction == 'rising'
+                    ? 'Increase'
+                    : s.direction == 'falling'
+                        ? 'Decrease'
+                        : 'Steady';
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      child: Icon(
+                        s.direction == 'rising'
+                            ? Icons.trending_up
+                            : s.direction == 'falling'
+                                ? Icons.trending_down
+                                : Icons.horizontal_rule,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    title: Text(_formatSpeciesName(s.species), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(
+                      '$dir • ${s.start} → ${s.end} (Δ ${s.delta >= 0 ? '+' : ''}${s.delta}, $pct%)',
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('Start: ${s.start}', style: const TextStyle(fontSize: 12)),
+                        Text('End: ${s.end}', style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildTrendsCard() {
     return LayoutBuilder(builder: (context, constraints) {
       final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
@@ -3253,6 +3344,11 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         runSpacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
+          IconButton(
+            icon: Icon(_trendsCollapsed ? Icons.unfold_more : Icons.unfold_less),
+            tooltip: _trendsCollapsed ? 'Expand trends' : 'Collapse trends',
+            onPressed: () => setState(() => _trendsCollapsed = !_trendsCollapsed),
+          ),
           TextButton.icon(
             onPressed: _trendSignals.isEmpty
                 ? null
@@ -3261,6 +3357,11 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                   },
             icon: const Icon(Icons.analytics_outlined),
             label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+          ),
+          TextButton.icon(
+            onPressed: _trendSignals.where((s) => s.delta != 0).isEmpty ? null : _openAllTrendsDialog,
+            icon: const Icon(Icons.list_alt_outlined),
+            label: const Text('See all changes'),
           ),
           IconButton(
             icon: _trendAiLoading
@@ -3271,6 +3372,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           )
         ],
       );
+      final changing = _sortedChangingTrends();
+      final topThree = _sortedChangingTrends(limit: 3);
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -3302,7 +3405,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                   ],
                 ),
               const SizedBox(height: 8),
-              if (_trendSignals.isEmpty)
+              if (changing.isEmpty)
                 Text(
                   'Need more data to spot trends. Add snapshots with species labels over several days.',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -3311,23 +3414,36 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _trendSignals.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    if (_showAdvancedTrends) ...[
+                    if (!_trendsCollapsed) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: topThree.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                      ),
                       const SizedBox(height: 12),
-                      Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'Top movers over the last 7 days (by % change).',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ] else ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: topThree.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Collapsed — tap expand or \"See all changes\" for details.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                    ],
+                    if (_showAdvancedTrends && topThree.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text('Advanced details (top 3)', style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 6),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _trendSignals.map((s) => _buildTrendDetailRow(context, s)).toList(),
+                        children: topThree.map((s) => _buildTrendDetailRow(context, s)).toList(),
                       ),
                     ]
                   ],
@@ -3351,23 +3467,51 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         : s.direction == 'falling'
             ? Icons.trending_down
             : Icons.remove;
+    final pct = (s.changeRate * 100).toStringAsFixed(1);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: chipMaxWidth),
-      child: Chip(
-        avatar: Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-        label: Text(
-          '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          softWrap: true,
-          overflow: TextOverflow.visible,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(12),
         ),
-        labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _formatSpeciesName(s.species),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text('${s.delta >= 0 ? '+' : ''}${s.delta}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text('${s.start} → ${s.end}',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                const Spacer(),
+                Text('$pct%', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildTrendDetailRow(BuildContext context, TrendSignal s) {
     final pct = (s.changeRate * 100).toStringAsFixed(1);
+    if (s.delta == 0) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 6.0),
       child: Row(
