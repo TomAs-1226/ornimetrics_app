@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
+import '../firebase_options.dart';
 import '../models/community_models.dart';
 import '../models/weather_models.dart';
 import 'community_storage_service.dart';
@@ -11,7 +13,11 @@ class CommunityService {
   CommunityService({CommunityStorageService? storage}) : _storage = storage ?? CommunityStorageService();
 
   final CommunityStorageService _storage;
-  DatabaseReference get _ref => primaryDatabase().ref('community_posts');
+  DatabaseReference get _ref => _db.ref('community_posts');
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
+      );
 
   Future<User?> signIn(String email, String password) async {
     final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
