@@ -890,7 +890,12 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   List<TrendSignal> _deriveTrendsFromPhotos(List<DetectionPhoto> photos) {
-    if (photos.isEmpty) return [];
+    if (photos.isEmpty) {
+      // Fallback: derive steady signals from current species summary so the card isn't empty.
+      return _speciesDataMap.entries
+          .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+          .toList();
+    }
     final now = DateTime.now().toUtc();
     final cutoff = now.subtract(const Duration(days: 7));
     final recent = photos.where((p) => p.timestamp.toUtc().isAfter(cutoff) && p.species != null && p.species!.isNotEmpty);
