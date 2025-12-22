@@ -27,6 +27,7 @@ import 'screens/notification_center_screen.dart';
 import 'services/ai_provider.dart';
 import 'services/location_service.dart';
 import 'services/community_storage_service.dart';
+import 'services/community_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
@@ -249,6 +250,8 @@ void main() async {
   await dotenv.load();
   await _ensureFirebaseInitialized();
   debugPrint('[firebase] Using production backends for realtime database and firestore.');
+  // One-time diagnostic to confirm RTDB visibility.
+  await CommunityService().logDiagnostics();
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();

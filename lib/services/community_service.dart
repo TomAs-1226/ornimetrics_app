@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 
 import '../firebase_options.dart';
 import '../models/community_models.dart';
@@ -27,6 +28,21 @@ class CommunityService {
   Future<User?> signUp(String email, String password) async {
     final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
     return cred.user;
+  }
+
+  Future<void> logDiagnostics() async {
+    try {
+      final rootSnap = await FirebaseDatabase.instance.ref().get();
+      final keys = rootSnap.children.map((c) => c.key).toList();
+      // ignore: avoid_print
+      print('[community_posts] root keys: $keys');
+      final postsSnap = await FirebaseDatabase.instance.ref('community_posts').get();
+      // ignore: avoid_print
+      print('[community_posts] exists=${postsSnap.exists} children=${postsSnap.children.length} valueType=${postsSnap.value.runtimeType}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[community_posts] diagnostics failed: $e');
+    }
   }
 
   List<CommunityPost> _parsePosts(DataSnapshot snap) {
@@ -119,6 +135,18 @@ class CommunityService {
     }
   }
 
+  Stream<List<CommunityPost>> watchCommunityPosts({int limit = 50}) {
+    final query = _ref.orderByChild('created_at').limitToLast(limit);
+    return query.onValue.asyncMap((event) async {
+      final snap = event.snapshot;
+      if (snap.children.length > 100) {
+        return compute(_computeParsePosts, _SerializableSnapshot.fromSnapshot(snap));
+      }
+      final posts = _parsePosts(snap)..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return posts;
+    });
+  }
+
   Future<void> createPost({
     required String caption,
     File? photo,
@@ -177,4 +205,32 @@ class CommunityService {
     if (hour < 21) return 'evening';
     return 'night';
   }
+}
+
+class _SerializableSnapshot {
+  _SerializableSnapshot(this.children);
+  final List<Map<String, dynamic>> children;
+
+  factory _SerializableSnapshot.fromSnapshot(DataSnapshot snap) {
+    final List<Map<String, dynamic>> out = [];
+    for (final child in snap.children) {
+      if (child.value is Map) {
+        final m = Map<String, dynamic>.from(child.value as Map);
+        m['_id'] = child.key;
+        out.add(m);
+      }
+    }
+    return _SerializableSnapshot(out);
+  }
+}
+
+List<CommunityPost> _computeParsePosts(_SerializableSnapshot serial) {
+  final posts = <CommunityPost>[];
+  for (final m in serial.children) {
+    final id = (m['_id'] ?? '').toString();
+    final copy = Map<String, dynamic>.from(m)..remove('_id');
+    posts.add(CommunityPost.fromRealtime(id, copy));
+  }
+  posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return posts;
 }

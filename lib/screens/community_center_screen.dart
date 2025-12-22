@@ -49,12 +49,11 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   final LocalAuthentication _localAuth = LocalAuthentication();
   final ScrollController _listController = ScrollController();
 
-  List<CommunityPost> _posts = <CommunityPost>[];
+  Stream<List<CommunityPost>>? _postsStream;
   WeatherSnapshot? _weather;
   File? _photo;
 
   bool _loading = false;
-  bool _loadingPosts = true;
   bool _loadingWeather = false;
   bool _biometricAvailable = false;
   String _status = '';
@@ -63,12 +62,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   bool _tagClogged = false;
   bool _tagCleaningDue = false;
   bool _showAdvancedTrends = false;
+  int _postLimit = 50;
 
   @override
   void initState() {
     super.initState();
     _loadPrefs();
-    _refresh();
+    _postsStream = _service.watchCommunityPosts(limit: _postLimit);
     _refreshWeather();
     _initBiometricSupport();
   }
@@ -102,19 +102,18 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     }
   }
 
-  Future<void> _refresh() async {
-    setState(() => _loadingPosts = true);
-    try {
-      final res = await _service.fetchPosts();
-      setState(() {
-        _posts = res;
-        _status = '';
-      });
-    } catch (e) {
-      setState(() => _status = e.toString());
-    } finally {
-      if (mounted) setState(() => _loadingPosts = false);
-    }
+  void _bumpPostLimit([int? to]) {
+    final next = to ?? (_postLimit < 100 ? 100 : 200);
+    setState(() {
+      _postLimit = next;
+      _postsStream = _service.watchCommunityPosts(limit: _postLimit);
+    });
+  }
+
+  Future<void> _refreshPosts() async {
+    setState(() {
+      _postsStream = _service.watchCommunityPosts(limit: _postLimit);
+    });
   }
 
   bool _isValidEmail(String value) {
@@ -292,7 +291,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
       );
       _captionController.clear();
       _photo = null;
-      await _refresh();
+      await _refreshPosts();
       setState(() => _status = 'Posted successfully');
     } on FirebaseException catch (e) {
       final msg = e.message ?? 'Upload failed.';
@@ -348,7 +347,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     final user = FirebaseAuth.instance.currentUser;
     return RefreshIndicator(
       onRefresh: () async {
-        await _refresh();
+        await _refreshPosts();
         await _refreshWeather();
       },
       child: Stack(
@@ -371,31 +370,59 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeInOutCubicEmphasized,
-                switchOutCurve: Curves.easeInOutCubic,
-                child: _loadingPosts
-                    ? _buildSkeletonFeed()
-                    : _posts.isEmpty
-                        ? Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                _status.isNotEmpty ? _status : 'No posts yet. Sign in and start the first thread.',
-                                style: const TextStyle(fontSize: 13),
+              StreamBuilder<List<CommunityPost>>(
+                stream: _postsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return _buildSkeletonFeed();
+                  }
+                  if (snapshot.hasError) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Could not load posts: ${snapshot.error}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    );
+                  }
+                  final posts = snapshot.data ?? const <CommunityPost>[];
+                  if (posts.isEmpty) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          _status.isNotEmpty ? _status : 'No posts yet. Sign in and start the first thread.',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      Column(
+                        children: posts
+                            .map(
+                              (p) => AnimatedSize(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeInOut,
+                                child: _buildPostTile(p),
                               ),
-                            ),
-                          )
-                        : Column(
-                            children: _posts
-                                .map((p) => AnimatedSize(
-                                      duration: const Duration(milliseconds: 180),
-                                      curve: Curves.easeInOut,
-                                      child: _buildPostTile(p),
-                                    ))
-                                .toList(),
+                            )
+                            .toList(),
+                      ),
+                      if (posts.length >= _postLimit)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _bumpPostLimit(),
+                            child: const Text('Load more'),
                           ),
+                        ),
+                    ],
+                  );
+                },
               )
             ],
           ),
