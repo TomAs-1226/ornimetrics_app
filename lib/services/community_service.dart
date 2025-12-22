@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import '../models/community_models.dart';
 import '../models/weather_models.dart';
@@ -11,8 +11,7 @@ class CommunityService {
   CommunityService({CommunityStorageService? storage}) : _storage = storage ?? CommunityStorageService();
 
   final CommunityStorageService _storage;
-  CollectionReference<Map<String, dynamic>> get _collection =>
-      FirebaseFirestore.instance.collection('community_posts');
+  DatabaseReference get _ref => primaryDatabase().ref('community_posts');
 
   Future<User?> signIn(String email, String password) async {
     final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
@@ -25,8 +24,21 @@ class CommunityService {
   }
 
   Future<List<CommunityPost>> fetchPosts() async {
-    final snap = await _collection.orderBy('created_at', descending: true).limit(50).get();
-    return snap.docs.map((d) => CommunityPost.fromFirestore(d)).toList();
+    final snap = await _ref.orderByChild('created_at').limitToLast(50).get();
+    if (snap.value == null) return [];
+
+    final List<CommunityPost> posts = [];
+    if (snap.value is Map) {
+      final data = Map<dynamic, dynamic>.from(snap.value as Map);
+      data.forEach((key, value) {
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
+        }
+      });
+    }
+
+    posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return posts;
   }
 
   Future<void> createPost({
@@ -66,10 +78,11 @@ class CommunityService {
       ).toMap()
         ..removeWhere((key, value) => value == null);
 
-      await _collection.add(payload);
+      final newRef = _ref.push();
+      await newRef.set(payload);
     } on FirebaseException catch (e) {
       throw FirebaseException(
-        plugin: e.plugin,
+        plugin: e.plugin == 'cloud_firestore' ? 'firebase_database' : e.plugin,
         code: e.code,
         message: e.code == 'permission-denied'
             ? 'You are not allowed to post to the community bucket. Check Storage rules and bucket ID.'

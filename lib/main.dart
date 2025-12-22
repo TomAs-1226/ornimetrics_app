@@ -925,7 +925,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     }).toList();
 
     signals.sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
-    return signals.take(5).toList();
+    final top = signals.take(5).toList();
+    if (top.isNotEmpty) return top;
+
+    // Fallback to species summary so the UI always has content.
+    return _speciesDataMap.entries
+        .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+        .toList();
   }
 
   Future<void> _generateTrendAiInsight() async {
@@ -3708,7 +3714,8 @@ class _PhotoTileState extends State<_PhotoTile> {
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   const Icon(Icons.thermostat, size: 16, color: Colors.white),
-                                  Flexible(
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: maxChipWidth - 28),
                                     child: Text(
                                       '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
                                       style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
