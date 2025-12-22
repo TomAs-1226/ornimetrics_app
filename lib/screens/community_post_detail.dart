@@ -16,10 +16,38 @@ class CommunityPostDetail extends StatefulWidget {
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
   late final AiProvider _ai =
-  RealAiProvider(model: widget.aiModel, apiKey: dotenv.env['OPENAI_API_KEY']);
-  final List<AiMessage> _messages = [AiMessage('assistant', 'Ask me about this sighting. I consider weather + feeder state.')];
+      RealAiProvider(model: widget.aiModel, apiKey: dotenv.env['OPENAI_API_KEY']);
+  late final List<AiMessage> _messages;
   final _controller = TextEditingController();
   bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.post;
+    final contextSummary = [
+      'Caption: ${p.caption.isNotEmpty ? p.caption : 'No caption provided.'}',
+      'Time of day tag: ${p.timeOfDayTag}.',
+      'Model: ${p.model}.',
+      'Sensors -> food low: ${p.sensors.lowFood}, clogged: ${p.sensors.clogged}, cleaning due: ${p.sensors.cleaningDue}.',
+      if (p.weather != null)
+        'Weather -> ${p.weather!.temperatureC.toStringAsFixed(1)}C, '
+            '${p.weather!.humidity.toStringAsFixed(0)}% humidity, ${p.weather!.condition}, '
+            'precip chance ${((p.weather!.precipitationChance ?? 0) * 100).toStringAsFixed(0)}%.',
+    ].join(' ');
+    _messages = [
+      AiMessage(
+        'system',
+        'You are an avian behavior guide helping community members interpret a specific post. '
+            'Ground your answers in the post details, weather, sensors, and model information. '
+            'If recommending actions, keep them safe for wildlife and note uncertainty.',
+      ),
+      AiMessage('assistant', 'Post context: $contextSummary'),
+      AiMessage(
+          'assistant',
+          'Ask me about this sighting. I will keep responses concise (<=4 sentences) and cite the post context when relevant.'),
+    ];
+  }
 
   Future<void> _send() async {
     if (_controller.text.trim().isEmpty) return;
@@ -37,10 +65,13 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
         'snow': widget.post.weather?.isSnowing,
         'hail': widget.post.weather?.isHailing,
       },
-      'sensors': 'food low: ${widget.post.sensors.lowFood}, clogged: ${widget.post.sensors.clogged}, cleaning: ${widget.post.sensors.cleaningDue}',
+      'sensors':
+          'food low: ${widget.post.sensors.lowFood}, clogged: ${widget.post.sensors.clogged}, cleaning: ${widget.post.sensors.cleaningDue}',
       'model': widget.post.model,
       'tod': widget.post.timeOfDayTag,
       'caption': widget.post.caption,
+      'imageUrl': widget.post.imageUrl,
+      'createdAtIso': widget.post.createdAt.toIso8601String(),
     };
     AiMessage aiReply;
     try {
