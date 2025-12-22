@@ -37,6 +37,9 @@ class CommunityService {
         final value = child.value;
         if (value is Map) {
           posts.add(CommunityPost.fromRealtime(child.key ?? '', Map<dynamic, dynamic>.from(value)));
+        } else {
+          // ignore: avoid_print
+          print('community_posts parse skipped: key=${child.key}, type=${value.runtimeType}');
         }
       }
     } else if (snap.value is Map) {
@@ -45,6 +48,9 @@ class CommunityService {
       data.forEach((key, value) {
         if (value is Map) {
           posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
+        } else {
+          // ignore: avoid_print
+          print('community_posts parse skipped: key=$key, type=${value.runtimeType}');
         }
       });
     } else if (snap.value is List) {
@@ -53,6 +59,9 @@ class CommunityService {
         final value = list[i];
         if (value is Map) {
           posts.add(CommunityPost.fromRealtime(i.toString(), Map<dynamic, dynamic>.from(value)));
+        } else {
+          // ignore: avoid_print
+          print('community_posts parse skipped: index=$i, type=${value.runtimeType}');
         }
       }
     }
@@ -61,24 +70,39 @@ class CommunityService {
 
   Future<List<CommunityPost>> fetchPosts() async {
     try {
-      // Plain fetch avoids index errors; we'll sort client-side.
-      final snap = await _ref.get();
+      DataSnapshot snap;
+      try {
+        snap = await _ref.orderByChild('created_at').get();
+      } on FirebaseException catch (e) {
+        // If the index is missing, fall back to plain fetch and sort client-side.
+        if (e.message != null && e.message!.contains('indexOn')) {
+          snap = await _ref.get();
+        } else {
+          rethrow;
+        }
+      }
+
       List<CommunityPost> posts = _parsePosts(snap);
 
-      // Fallback if the snapshot has a map but no children iteration.
+      // If ordered query returned no children but data exists, try a plain get.
       if (posts.isEmpty && snap.value != null) {
         try {
-          final plain = await _ref.orderByKey().get();
+          final plain = await _ref.get();
           posts = _parsePosts(plain);
         } catch (_) {}
       }
 
-      posts.sort((a, b) {
-        // If created_at is missing for any reason, fall back to key ordering.
-        final cmp = b.createdAt.compareTo(a.createdAt);
-        if (cmp != 0) return cmp;
-        return b.id.compareTo(a.id);
-      });
+      posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (posts.isNotEmpty) {
+        final newest = posts.first.createdAt.toIso8601String();
+        final oldest = posts.last.createdAt.toIso8601String();
+        // ignore: avoid_print
+        print('[community_posts] loaded ${posts.length} posts (newest: $newest, oldest: $oldest)');
+      } else {
+        // ignore: avoid_print
+        print('[community_posts] loaded 0 posts');
+      }
 
       // Keep only the newest 100 to cap UI churn.
       if (posts.length > 100) {
