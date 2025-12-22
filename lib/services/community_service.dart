@@ -1,21 +1,23 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 
+import '../firebase_options.dart';
 import '../models/community_models.dart';
 import '../models/weather_models.dart';
+import 'community_storage_service.dart';
 
 class CommunityService {
-  CommunityService({this.testMode = true});
+  CommunityService({CommunityStorageService? storage}) : _storage = storage ?? CommunityStorageService();
 
-  bool testMode;
-
-  final List<CommunityPost> _localPosts = <CommunityPost>[];
-
-  CollectionReference<Map<String, dynamic>> get _collection => FirebaseFirestore.instance
-      .collection(testMode ? 'community_posts_test' : 'community_posts');
+  final CommunityStorageService _storage;
+  DatabaseReference get _ref => _db.ref('community_posts');
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
+      );
 
   Future<User?> signIn(String email, String password) async {
     final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
@@ -27,16 +29,28 @@ class CommunityService {
     return cred.user;
   }
 
-  Future<void> toggleTestMode(bool enabled) async {
-    testMode = enabled;
-  }
-
   Future<List<CommunityPost>> fetchPosts() async {
-    if (testMode) {
-      return List<CommunityPost>.from(_localPosts.reversed);
+    DataSnapshot snap;
+    try {
+      snap = await _ref.orderByChild('created_at').limitToLast(50).get();
+    } on FirebaseException {
+      // Fallback if the index is missing or ordering fails; still return recent items.
+      snap = await _ref.limitToLast(50).get();
     }
-    final snap = await _collection.orderBy('created_at', descending: true).limit(50).get();
-    return snap.docs.map((d) => CommunityPost.fromFirestore(d)).toList();
+    if (snap.value == null) return [];
+
+    final List<CommunityPost> posts = [];
+    if (snap.value is Map) {
+      final data = Map<dynamic, dynamic>.from(snap.value as Map);
+      data.forEach((key, value) {
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
+        }
+      });
+    }
+
+    posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return posts;
   }
 
   Future<void> createPost({
@@ -47,44 +61,46 @@ class CommunityService {
     WeatherSnapshot? weather,
     String model = 'Ornimetrics O1 feeder',
   }) async {
-    if (testMode) {
-      _localPosts.add(CommunityPost(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        author: author,
-        caption: caption,
-        imageUrl: null,
-        createdAt: DateTime.now(),
-        timeOfDayTag: _timeOfDayFor(DateTime.now()),
-        sensors: sensors,
-        model: model,
-        weather: weather,
-      ));
-      return;
+    final sanitizedCaption = caption.trim();
+    if (sanitizedCaption.isEmpty && photo == null) {
+      throw FirebaseException(
+        plugin: 'community_service',
+        code: 'invalid-argument',
+        message: 'Add a caption or photo before posting.',
+      );
     }
 
+    await FirebaseAuth.instance.currentUser?.reload();
     String? uploadedUrl;
     if (photo != null) {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child((testMode ? 'community_posts_test' : 'community_posts'))
-          .child('${DateTime.now().millisecondsSinceEpoch}_${photo.path.split('/').last}');
-      final task = await ref.putFile(photo);
-      uploadedUrl = await task.ref.getDownloadURL();
+      uploadedUrl = await _storage.uploadCommunityPhoto(file: photo, uid: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous');
     }
 
-    await _collection.add({
-      ...CommunityPost(
+    try {
+      final payload = CommunityPost(
         id: 'pending',
-        author: author,
-        caption: caption,
+        author: author.trim().isEmpty ? 'community member' : author.trim(),
+        caption: sanitizedCaption,
         imageUrl: uploadedUrl,
         createdAt: DateTime.now(),
         timeOfDayTag: _timeOfDayFor(DateTime.now()),
         sensors: sensors,
         model: model,
         weather: weather,
-      ).toMap(),
-    });
+      ).toMap()
+        ..removeWhere((key, value) => value == null);
+
+      final newRef = _ref.push();
+      await newRef.set(payload);
+    } on FirebaseException catch (e) {
+      throw FirebaseException(
+        plugin: e.plugin == 'cloud_firestore' ? 'firebase_database' : e.plugin,
+        code: e.code,
+        message: e.code == 'permission-denied'
+            ? 'You are not allowed to post to the community bucket. Check Storage rules and bucket ID.'
+            : e.message,
+      );
+    }
   }
 
   String _timeOfDayFor(DateTime dt) {

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -17,8 +16,6 @@ class NotificationCenterScreen extends StatefulWidget {
 class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   final _service = NotificationsService.instance;
   final _engine = MaintenanceRulesEngine.instance;
-  MockFoodLevelProvider? _mockFoodProvider;
-  bool _draining = false;
 
   @override
   void initState() {
@@ -88,26 +85,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             onChanged: (val) =>
                                 _service.updatePrefs(prefs.copyWith(progressNotificationsEnabled: val)),
                           ),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(prefs.lastCleaned == null
-                                    ? 'Last cleaned: not recorded'
-                                    : 'Last cleaned: ${DateFormat('yMMMd').format(prefs.lastCleaned!)}'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  await _service.markCleaned();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Marked cleaned today')),
-                                    );
-                                  }
-                                },
-                                child: const Text('Mark cleaned today'),
-                              )
-                            ],
-                          )
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final label = Text(
+                                  prefs.lastCleaned == null
+                                      ? 'Last cleaned: not recorded'
+                                      : 'Last cleaned: ${DateFormat('yMMMd').format(prefs.lastCleaned!)}',
+                                  softWrap: true,
+                                );
+
+                                final button = ElevatedButton(
+                                  onPressed: () async {
+                                    await _service.markCleaned();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Marked cleaned today')),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Mark cleaned today'),
+                                );
+
+                                if (constraints.maxWidth < 420) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      label,
+                                      const SizedBox(height: 8),
+                                      Align(alignment: Alignment.centerLeft, child: button),
+                                    ],
+                                  );
+                                }
+
+                                return Row(
+                                  children: [
+                                    Expanded(child: label),
+                                    button,
+                                  ],
+                                );
+                              },
+                            )
                         ],
                       ),
                     ),
@@ -121,8 +138,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           const SizedBox(height: 12),
           _foodLevelCard(),
           const SizedBox(height: 12),
-          if (kDebugMode) _debugCard(),
-          const SizedBox(height: 12),
           const Text('Recent notification events', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           ValueListenableBuilder<List<NotificationEvent>>(
@@ -132,7 +147,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text('No notifications yet. Use simulate buttons above to test.'),
+                    child: Text('No notifications yet. Connect your feeder to start receiving production alerts.'),
                   ),
                 );
               }
@@ -175,22 +190,49 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   value: prefs.weatherBasedCleaningEnabled,
                   onChanged: (v) => _service.updatePrefs(prefs.copyWith(weatherBasedCleaningEnabled: v)),
                 ),
-                Row(
-                  children: [
-                    const Text('Weather sensitivity'),
-                    const SizedBox(width: 12),
-                    ChoiceChip(
-                      label: const Text('Normal'),
-                      selected: prefs.weatherSensitivity == WeatherSensitivity.normal,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('High'),
-                      selected: prefs.weatherSensitivity == WeatherSensitivity.high,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final chips = [
+                      ChoiceChip(
+                        label: const Text('Normal'),
+                        selected: prefs.weatherSensitivity == WeatherSensitivity.normal,
+                        onSelected: (_) =>
+                            _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.normal)),
+                      ),
+                      ChoiceChip(
+                        label: const Text('High'),
+                        selected: prefs.weatherSensitivity == WeatherSensitivity.high,
+                        onSelected: (_) =>
+                            _service.updatePrefs(prefs.copyWith(weatherSensitivity: WeatherSensitivity.high)),
+                      ),
+                    ];
+
+                    if (constraints.maxWidth < 360) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Weather sensitivity'),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: chips,
+                          )
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        const Text('Weather sensitivity'),
+                        const SizedBox(width: 12),
+                        Wrap(
+                          spacing: 8,
+                          children: chips,
+                        )
+                      ],
+                    );
+                  },
                 ),
                 Slider(
                   value: prefs.humidityThreshold,
@@ -206,26 +248,29 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   value: prefs.heavyUseEnabled,
                   onChanged: (v) => _service.updatePrefs(prefs.copyWith(heavyUseEnabled: v)),
                 ),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text('Heavy-use sensitivity'),
-                    const SizedBox(width: 12),
                     ChoiceChip(
                       label: const Text('Low'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.low,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.low)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.low)),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('Medium'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.medium,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.medium)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.medium)),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('High'),
                       selected: prefs.heavyUseSensitivity == UsageSensitivity.high,
-                      onSelected: (_) => _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.high)),
+                      onSelected: (_) =>
+                          _service.updatePrefs(prefs.copyWith(heavyUseSensitivity: UsageSensitivity.high)),
                     ),
                   ],
                 ),
@@ -293,15 +338,42 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.rice_bowl_outlined),
-                    const SizedBox(width: 8),
-                    Text('Food level', style: Theme.of(context).textTheme.titleMedium),
-                    const Spacer(),
-                    Text(reading == null ? 'Awaiting sensor' : '${pct.toStringAsFixed(0)}%'),
-                  ],
-                ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trailing = Text(
+                        reading == null ? 'Awaiting sensor' : '${pct.toStringAsFixed(0)}%',
+                        overflow: TextOverflow.ellipsis,
+                      );
+
+                      if (constraints.maxWidth < 360) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.rice_bowl_outlined),
+                                const SizedBox(width: 8),
+                                Text('Food level', style: Theme.of(context).textTheme.titleMedium),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            trailing,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          const Icon(Icons.rice_bowl_outlined),
+                          const SizedBox(width: 8),
+                          Text('Food level', style: Theme.of(context).textTheme.titleMedium),
+                          const Spacer(),
+                          trailing,
+                        ],
+                      );
+                    },
+                  ),
                 const SizedBox(height: 8),
                 LinearProgressIndicator(
                   minHeight: 10,
@@ -311,98 +383,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 const SizedBox(height: 8),
                 Text(
                   reading == null
-                      ? 'Mock sensor can be started from debug tools.'
+                      ? 'Connect your production food-level sensor to surface alerts here.'
                       : 'Last update: ${DateFormat('hh:mm:ss a').format(reading.timestamp)}',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
-                if (kDebugMode)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _toggleDrain,
-                      icon: Icon(_draining ? Icons.pause_circle_outline : Icons.play_circle_outline),
-                      label: Text(_draining ? 'Stop mock drain' : 'Simulate draining'),
-                    ),
-                  )
               ],
             ),
           ),
         );
       },
     );
-  }
-
-  Widget _debugCard() {
-    return ValueListenableBuilder<NotificationPreferences>(
-      valueListenable: _service.preferences,
-      builder: (_, prefs, __) {
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Test / debug (dev-only)', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => _service.simulateLowFood(),
-                      icon: const Icon(Icons.warning_amber),
-                      label: const Text('Low food'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _service.simulateClogged(),
-                      icon: const Icon(Icons.block),
-                      label: const Text('Clogged'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _service.triggerCleaningCheck(),
-                      icon: const Icon(Icons.cleaning_services_outlined),
-                      label: const Text('Cleaning due'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateHeavyUse(prefs),
-                      icon: const Icon(Icons.fitness_center_outlined),
-                      label: const Text('Sim heavy use'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Rain', prefs: prefs),
-                      icon: const Icon(Icons.umbrella),
-                      label: const Text('Rain event'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Snow', prefs: prefs),
-                      icon: const Icon(Icons.ac_unit_outlined),
-                      label: const Text('Snow event'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _engine.simulateWeatherEvent(label: 'Hail', prefs: prefs),
-                      icon: const Icon(Icons.cloudy_snowing),
-                      label: const Text('Hail event'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _toggleDrain() async {
-    if (_draining) {
-      await _service.stopFoodLevelTracking();
-      await _mockFoodProvider?.dispose();
-      setState(() => _draining = false);
-      return;
-    }
-    _mockFoodProvider = MockFoodLevelProvider(startPercent: _service.preferences.value.lowFoodThresholdPercent + 40);
-    await _service.startFoodLevelTracking(_mockFoodProvider!);
-    setState(() => _draining = true);
   }
 
   IconData _iconForType(NotificationType type) {

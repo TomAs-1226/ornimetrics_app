@@ -5,15 +5,16 @@ import '../models/community_models.dart';
 import '../services/ai_provider.dart';
 
 class CommunityPostDetail extends StatefulWidget {
-  const CommunityPostDetail({super.key, required this.post});
+  const CommunityPostDetail({super.key, required this.post, this.aiModel = 'gpt-4o-mini'});
   final CommunityPost post;
+  final String aiModel;
 
   @override
   State<CommunityPostDetail> createState() => _CommunityPostDetailState();
 }
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
-  final _ai = MockAiProvider();
+  late final AiProvider _ai = RealAiProvider(model: widget.aiModel);
   final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
@@ -39,7 +40,16 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
       'tod': widget.post.timeOfDayTag,
       'caption': widget.post.caption,
     };
-    final aiReply = await _ai.send(List.from(_messages), context: contextMap);
+    AiMessage aiReply;
+    try {
+      aiReply = await _ai.send(
+        List.from(_messages),
+        context: contextMap,
+        modelOverride: widget.aiModel,
+      );
+    } catch (e) {
+      aiReply = AiMessage('ai', 'AI unavailable right now ($e). Please try again soon.');
+    }
     setState(() {
       _messages.add(aiReply);
       _sending = false;
@@ -60,7 +70,7 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
               children: [
                 _buildCard(context, p),
                 const SizedBox(height: 16),
-                const Text('AI advice (mocked)', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('AI advice', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(

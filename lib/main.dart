@@ -1,35 +1,36 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart'; // for ValueListenableBuilder
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:pie_chart/pie_chart.dart';
-import 'package:file_selector/file_selector.dart';
-import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'firebase_options.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:ui' as ui;
 import 'dart:typed_data';
-import 'dart:async';
-import 'dart:convert'; // provides both json and base64
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:io';
+import 'dart:ui' as ui;
 
-import 'services/notifications_service.dart';
-import 'services/maintenance_rules_engine.dart';
-import 'services/food_level_provider.dart';
-import 'services/weather_provider.dart';
-import 'screens/environment_screen.dart';
-import 'screens/community_center_screen.dart';
-import 'screens/notification_center_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart'; // for ValueListenableBuilder
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:pie_chart/pie_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'firebase_options.dart';
 import 'models/weather_models.dart';
+import 'screens/community_center_screen.dart';
+import 'screens/environment_screen.dart';
+import 'screens/notification_center_screen.dart';
+import 'services/ai_provider.dart';
+import 'services/location_service.dart';
+import 'services/community_storage_service.dart';
+import 'services/maintenance_rules_engine.dart';
+import 'services/notifications_service.dart';
+import 'services/weather_provider.dart';
 
 
 // Global theme mode notifier
@@ -106,6 +107,18 @@ class DetectionPhoto {
   }
 }
 
+class TrendSignal {
+  TrendSignal({required this.species, required this.start, required this.end});
+
+  final String species;
+  final int start;
+  final int end;
+
+  int get delta => end - start;
+  double get changeRate => start == 0 ? end.toDouble() : (end - start) / start;
+  String get direction => delta > 0 ? 'rising' : (delta < 0 ? 'falling' : 'steady');
+}
+
 // Model for actionable eco tasks
 class EcoTask {
   final String id; // uuid-like
@@ -170,14 +183,11 @@ void safeSelectionHaptic() {
   }
 }
 
-const bool kUseEmulatorsByDefault = true;
-
-Future<void> _configureFirebaseEmulators() async {
-  final host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
-  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-  FirebaseStorage.instance.useStorageEmulator(host, 9199);
-  FirebaseAuth.instance.useAuthEmulator(host, 9099);
-  FirebaseDatabase.instance.useDatabaseEmulator(host, 9000);
+FirebaseDatabase primaryDatabase() {
+  return FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: DefaultFirebaseOptions.currentPlatform.databaseURL,
+  );
 }
 
 Widget envPill(BuildContext context, {required IconData icon, required String label}) {
@@ -205,13 +215,41 @@ Widget envPill(BuildContext context, {required IconData icon, required String la
   );
 }
 
+Future<FirebaseApp> _ensureFirebaseInitialized() async {
+  final opts = DefaultFirebaseOptions.currentPlatform;
+  final placeholders = [
+    opts.apiKey,
+    opts.appId,
+    opts.projectId,
+    opts.storageBucket,
+    opts.messagingSenderId,
+  ];
+  if (placeholders.any((e) => (e ?? '').startsWith('REPLACE_ME'))) {
+    throw StateError(
+      'Firebase configuration is missing. Regenerate lib/firebase_options.dart with "flutterfire configure" '
+      'and use matching google-services.json / GoogleService-Info.plist.',
+    );
+  }
+  try {
+    if (Firebase.apps.isNotEmpty) {
+      return Firebase.apps.first;
+    }
+    return await Firebase.initializeApp(
+      options: opts,
+    );
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
+      return Firebase.app();
+    }
+    rethrow;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  if (kDebugMode && kUseEmulatorsByDefault) {
-    await _configureFirebaseEmulators();
-  }
+  await _ensureFirebaseInitialized();
+  debugPrint('[firebase] Using production backends for realtime database and firestore.');
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();
@@ -232,9 +270,6 @@ void main() async {
 
   await NotificationsService.instance.load();
   await MaintenanceRulesEngine.instance.load();
-  if (kDebugMode) {
-    await NotificationsService.instance.startFoodLevelTracking(MockFoodLevelProvider());
-  }
 
   runApp(const WildlifeApp());
 }
@@ -432,29 +467,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
             const SizedBox(height: 8),
             Text(
-              'Configure low food, clog, and cleaning reminders. Simulate alerts to verify without hardware.',
+              'Configure low food, clog, and cleaning reminders. Alerts will flow from your production device telemetry.',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: service.simulateLowFood,
-                  icon: const Icon(Icons.warning_amber_outlined),
-                  label: const Text('Low food'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: service.simulateClogged,
-                  icon: const Icon(Icons.block),
-                  label: const Text('Clogged'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: service.triggerCleaningCheck,
-                  icon: const Icon(Icons.cleaning_services_outlined),
-                  label: const Text('Cleaning due'),
-                ),
-              ],
             ),
           ],
         ),
@@ -483,8 +497,18 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   DateTime? _lastUpdated;
   int _lastUsageCount = 0;
   DateTime? _lastUsageSampleAt;
-  bool _useMockWeather = true;
-  WeatherProvider _weatherProvider = MockWeatherProvider();
+  WeatherProvider _weatherProvider = RealWeatherProvider(
+    apiKey: dotenv.env['WEATHER_API_KEY'] ?? '',
+    endpoint: dotenv.env['WEATHER_ENDPOINT'] ?? 'https://api.weatherapi.com/v1',
+  );
+  Position? _position;
+  String? _locationStatus;
+  bool _requestingLocation = false;
+  final AiProvider _trendAi = RealAiProvider();
+  bool _trendAiLoading = false;
+  String? _trendAiInsight;
+  List<TrendSignal> _trendSignals = [];
+  bool _showAdvancedTrends = false;
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -524,34 +548,36 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     await prefs.setInt('pref_ai_photo_limit', _aiPhotoLimit);
   }
 
-  Future<void> _loadWeatherPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final useMock = prefs.getBool('pref_weather_use_mock') ?? true;
+  Future<void> _captureLocation({bool force = false}) async {
+    if (_requestingLocation) return;
+    if (!force && _position != null) return;
     setState(() {
-      _useMockWeather = useMock;
-      _weatherProvider = useMock
-          ? MockWeatherProvider()
-          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
+      _requestingLocation = true;
+      _locationStatus = 'Requesting GPS permission...';
     });
-  }
-
-  Future<void> _toggleWeatherProvider() async {
-    final next = !_useMockWeather;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('pref_weather_use_mock', next);
-    setState(() {
-      _useMockWeather = next;
-      _weatherProvider = next
-          ? MockWeatherProvider()
-          : RealWeatherProvider(apiKey: dotenv.env['WEATHER_API_KEY'], endpoint: dotenv.env['WEATHER_ENDPOINT']);
-    });
+    try {
+      await LocationService.instance.ensureReady();
+      final pos = await LocationService.instance.currentPosition(forceUpdate: force);
+      if (!mounted) return;
+      setState(() {
+        _position = pos;
+        _locationStatus = pos == null ? 'Location unavailable. Check permissions.' : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _locationStatus = 'Location error: ${e.toString().split('\n').first}';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _requestingLocation = false);
+      }
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _fetchTodaySummaryFlexible();
-    _fetchPhotoSnapshots();
     _scrollController.addListener(_updateFabVisibility);
     _recentScrollController.addListener(_updateFabVisibility);
     autoRefreshEnabledNotifier.addListener(_updateAutoRefresh);
@@ -560,7 +586,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
-    _loadWeatherPrefs();
+    _captureLocation().then((_) {
+      _fetchTodaySummaryFlexible();
+      _fetchPhotoSnapshots();
+    });
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
@@ -610,7 +639,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
   // Tries a specific summary path and returns the snapshot if it exists and is a Map
   Future<DataSnapshot?> _trySummaryAtPath(String path) async {
-    final snap = await FirebaseDatabase.instance.ref(path).get();
+    final snap = await primaryDatabase().ref(path).get();
     if (snap.exists && snap.value is Map) return snap;
     return null;
   }
@@ -629,7 +658,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
   // Read a summary at a given path and return counts, or null if not present
   Future<Map<String, double>?> _readSummaryCounts(String path) async {
-    final snap = await FirebaseDatabase.instance.ref(path).get();
+    final snap = await primaryDatabase().ref(path).get();
     if (snap.exists && snap.value is Map) {
       return _toCountsFromValue(snap.value);
     }
@@ -652,7 +681,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     if (direct != null) _mergeCountsInPlace(out, direct);
 
     // b) Summaries under any mid-level keys
-    final dateNode = await FirebaseDatabase.instance.ref('detections/$date').get();
+    final dateNode = await primaryDatabase().ref('detections/$date').get();
     if (dateNode.exists && dateNode.value is Map) {
       final m = Map<dynamic, dynamic>.from(dateNode.value as Map);
       for (final k in m.keys) {
@@ -668,7 +697,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
   Future<void> _fetchTodaySummaryFlexible({String sessionKey = 'session_1'}) async {
     try {
-      final db = FirebaseDatabase.instance.ref();
+      final db = primaryDatabase().ref();
 
       final String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       String usedDate = today;
@@ -727,6 +756,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _refreshAll() async {
+    await _captureLocation();
     await Future.wait([
       _fetchPhotoSnapshots(),
       _fetchTodaySummaryFlexible(),
@@ -734,7 +764,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchPhotoSnapshots() async {
-    final ref = FirebaseDatabase.instance.ref(kPhotoFeedPath);
+    await _captureLocation();
+    final ref = primaryDatabase().ref(kPhotoFeedPath);
     try {
       DataSnapshot snap;
 
@@ -784,29 +815,20 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       // Always sort newest first (covers fallback path too)
       items.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      WeatherSnapshot? weatherTag;
-      try {
-        weatherTag = await _weatherProvider.fetchCurrent();
-        await MaintenanceRulesEngine.instance.applyWeather(
-          weatherTag,
-          NotificationsService.instance.preferences.value,
-        );
-      } catch (_) {
-        // keep null if provider fails; UI will remain graceful
+      if (_position != null) {
+        await _attachWeatherToPhotos(items);
+      } else {
+        _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
-      if (weatherTag != null) {
-        for (var i = 0; i < items.length; i++) {
-          items[i] = items[i].withWeather(weatherTag);
-        }
-      }
+      final trendSignals = _deriveTrendsFromPhotos(items);
 
       if (!mounted) return;
       setState(() {
         _photos = items;
         _loadingPhotos = false;
-        _photoError = '';
         _photosLastUpdated = DateTime.now();
+        _trendSignals = trendSignals;
       });
     } catch (e) {
       if (!mounted) return;
@@ -818,8 +840,140 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     }
   }
 
+  Future<void> _attachWeatherToPhotos(List<DetectionPhoto> items) async {
+    if (_position == null) return;
+    final cache = <String, WeatherSnapshot>{};
+
+    // Fetch per unique hour to avoid hammering the API and the UI thread.
+    final uniqueKeys = items
+        .take(50) // cap to prevent excessive parallel work on large feeds
+        .map((p) => DateFormat('yyyy-MM-dd-HH').format(p.timestamp.toUtc()))
+        .toSet()
+        .toList();
+
+    final futures = uniqueKeys.map((key) async {
+      final parts = key.split('-');
+      final ts = DateTime.parse('${parts[0]}-${parts[1]}-${parts[2]} ${parts[3]}:00:00Z');
+      try {
+        cache[key] = await _weatherProvider.fetchHistorical(
+          timestamp: ts.toUtc(),
+          latitude: _position!.latitude,
+          longitude: _position!.longitude,
+        );
+      } catch (_) {
+        // Fallback to current weather if history is missing; better than blocking UI.
+        try {
+          cache[key] = await _weatherProvider.fetchCurrent(
+            latitude: _position!.latitude,
+            longitude: _position!.longitude,
+          );
+        } catch (e) {
+          _photoError = 'Weather lookup failed for some items: ${e.toString().split('\n').first}';
+        }
+      }
+    }).toList();
+
+    await Future.wait(futures);
+
+    // Apply cached tags back to items.
+    for (var i = 0; i < items.length; i++) {
+      final key = DateFormat('yyyy-MM-dd-HH').format(items[i].timestamp.toUtc());
+      final tag = cache[key];
+      if (tag != null) {
+        items[i] = items[i].withWeather(tag);
+        await MaintenanceRulesEngine.instance.applyWeather(
+          tag,
+          NotificationsService.instance.preferences.value,
+        );
+      }
+    }
+  }
+
+  List<TrendSignal> _deriveTrendsFromPhotos(List<DetectionPhoto> photos) {
+    if (photos.isEmpty) {
+      // Fallback: derive steady signals from current species summary so the card isn't empty.
+      return _speciesDataMap.entries
+          .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+          .toList();
+    }
+    final now = DateTime.now().toUtc();
+    final cutoff = now.subtract(const Duration(days: 7));
+    final recent = photos.where((p) => p.timestamp.toUtc().isAfter(cutoff) && p.species != null && p.species!.isNotEmpty);
+
+    final Map<String, Map<String, int>> perDay = {};
+    for (final p in recent) {
+      final dayKey = DateFormat('yyyy-MM-dd').format(p.timestamp.toUtc());
+      final species = p.species!.toLowerCase();
+      perDay.putIfAbsent(dayKey, () => {});
+      perDay[dayKey]![species] = (perDay[dayKey]![species] ?? 0) + 1;
+    }
+
+    final sortedDays = perDay.keys.toList()..sort();
+    if (sortedDays.isEmpty) {
+      return _speciesDataMap.entries
+          .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+          .toList();
+    }
+
+    // Smooth the trend by comparing the early and late halves of the window (up to 3-day averages).
+    final Set<String> allSpecies = perDay.values.expand((m) => m.keys).toSet();
+    final int window = math.min(3, sortedDays.length);
+
+    final signals = allSpecies.map((species) {
+      final dayCounts = sortedDays.map((d) => perDay[d]?[species] ?? 0).toList();
+      final startSlice = dayCounts.take(window).toList();
+      final endSlice = dayCounts.skip(dayCounts.length - window).toList();
+      final startAvg = startSlice.isEmpty ? 0 : startSlice.reduce((a, b) => a + b) / startSlice.length;
+      final endAvg = endSlice.isEmpty ? 0 : endSlice.reduce((a, b) => a + b) / endSlice.length;
+      return TrendSignal(species: species, start: startAvg.round(), end: endAvg.round());
+    }).toList();
+
+    signals.sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    final top = signals.take(5).toList();
+    if (top.isNotEmpty) return top;
+
+    // Fallback to species summary so the UI always has content.
+    return _speciesDataMap.entries
+        .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+        .toList();
+  }
+
+  Future<void> _generateTrendAiInsight() async {
+    if (_trendSignals.isEmpty) return;
+    setState(() {
+      _trendAiLoading = true;
+      _trendAiInsight = null;
+    });
+
+    final summary = _trendSignals
+        .map((s) => '${s.species}: ${s.direction} (${s.start} → ${s.end})')
+        .join('; ');
+
+    final messages = <AiMessage>[
+      AiMessage('system', 'You are an ornithology analyst. Blend migration heuristics with numeric trends.'),
+      AiMessage('user', 'Here are 7-day trend signals: $summary. Provide 3 succinct migration or behavior insights.'),
+    ];
+
+    try {
+      final reply = await _trendAi.send(messages, context: {
+        'location': _position != null ? '${_position!.latitude},${_position!.longitude}' : 'unknown',
+      });
+      if (!mounted) return;
+      setState(() {
+        _trendAiInsight = reply.content;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _trendAiInsight = 'Trend AI unavailable: $e';
+      });
+    } finally {
+      if (mounted) setState(() => _trendAiLoading = false);
+    }
+  }
+
   Future<void> _fetchDetectionData() async {
-    final dbRef = FirebaseDatabase.instance.ref('detections/2025-07-26/session_1/summary');
+    final dbRef = primaryDatabase().ref('detections/2025-07-26/session_1/summary');
 
     try {
       final snapshot = await dbRef.get();
@@ -1059,7 +1213,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ),
           ],
           bottom: const TabBar(
-            isScrollable: false,
+            isScrollable: true,
+            labelPadding: EdgeInsets.symmetric(horizontal: 16),
             tabs: [
               Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
               Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
@@ -1073,7 +1228,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             _buildDashboardTab(),
             _buildRecentDetectionsTab(),
             _buildEnvironmentTab(),
-            const CommunityCenterScreen(),
+            CommunityCenterScreen(
+              weatherProvider: _weatherProvider,
+              latitude: _position?.latitude,
+              longitude: _position?.longitude,
+              locationStatus: _locationStatus,
+              onRequestLocation: () => _captureLocation(force: true),
+            ),
           ],
         ),
         floatingActionButton: _showFab
@@ -1153,6 +1314,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     const SizedBox(height: 24),
             _buildTasksCard(),
             const SizedBox(height: 24),
+                    _buildTrendsCard(),
+                    const SizedBox(height: 24),
                     _buildAiAnalysisCard(),
                   ],
                 ),
@@ -2987,6 +3150,138 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildTrendsCard() {
+    return LayoutBuilder(builder: (context, constraints) {
+      final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
+                children: [
+                  const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  Wrap(
+                    spacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _trendSignals.isEmpty
+                            ? null
+                            : () {
+                                setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+                              },
+                        icon: const Icon(Icons.analytics_outlined),
+                        label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+                      ),
+                      IconButton(
+                        icon: _trendAiLoading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.auto_awesome),
+                        tooltip: 'Ask AI for migration insight',
+                        onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+                      )
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_trendSignals.isEmpty)
+                Text(
+                  'Need more data to spot trends. Add snapshots with species labels over several days.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _trendSignals.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                    if (_showAdvancedTrends) ...[
+                      const SizedBox(height: 12),
+                      Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _trendSignals.map((s) => _buildTrendDetailRow(context, s)).toList(),
+                      ),
+                    ]
+                  ],
+                ),
+              if (_trendAiInsight != null) ...[
+                const Divider(height: 20),
+                Text('AI migration insight', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(_trendAiInsight!),
+              ]
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _buildTrendChip(BuildContext context, TrendSignal s, double chipMaxWidth) {
+    final icon = s.direction == 'rising'
+        ? Icons.trending_up
+        : s.direction == 'falling'
+            ? Icons.trending_down
+            : Icons.remove;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: chipMaxWidth),
+      child: Chip(
+        avatar: Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+        label: Text(
+          '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+          softWrap: true,
+          overflow: TextOverflow.visible,
+        ),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      ),
+    );
+  }
+
+  Widget _buildTrendDetailRow(BuildContext context, TrendSignal s) {
+    final pct = (s.changeRate * 100).toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _formatSpeciesName(s.species),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Δ ${s.delta} (${pct}%)',
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTaskChip(String category) {
     IconData icon = Icons.task_alt_outlined;
     String label = category;
@@ -3240,7 +3535,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget _buildEnvironmentTab() {
     return EnvironmentScreen(
       provider: _weatherProvider,
-      onSwapProvider: _toggleWeatherProvider,
+      latitude: _position?.latitude,
+      longitude: _position?.longitude,
+      locationStatus: _locationStatus,
+      onRequestLocation: () => _captureLocation(force: true),
     );
   }
 
@@ -3290,8 +3588,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
-    )
-        .then((_) => _loadWeatherPrefs());
+    );
   }
 }
 
@@ -3407,43 +3704,76 @@ class _PhotoTileState extends State<_PhotoTile> {
                     colors: [Color(0xAA000000), Color(0x00000000)],
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (p.weatherAtCapture != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.thermostat, size: 16, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
-                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxChipWidth = constraints.maxWidth - 16;
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      children: [
+                        if (p.weatherAtCapture != null)
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: maxChipWidth),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Wrap(
+                                spacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  const Icon(Icons.thermostat, size: 16, color: Colors.white),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: maxChipWidth - 28),
+                                    child: Text(
+                                      '${p.weatherAtCapture!.temperatureC.toStringAsFixed(1)}°C • ${p.weatherAtCapture!.humidity.toStringAsFixed(0)}% hum',
+                                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
+                          ),
+                        if ((p.species ?? '').isNotEmpty)
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: maxChipWidth),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black45,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                p.species!,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxChipWidth),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black38,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              DateFormat('MMM d, hh:mm a').format(p.timestamp),
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
-                      ),
-                    const Spacer(),
-                    if ((p.species ?? '').isNotEmpty)
-                      Expanded(
-                        child: Text(
-                          p.species!,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    Text(
-                      DateFormat('MMM d, hh:mm a').format(p.timestamp),
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -3582,7 +3912,7 @@ class _RecentPhotoViewerState extends State<RecentPhotoViewer> {
 /// Returns newest-first list of DetectionPhoto. Safe to call from anywhere.
 Future<List<DetectionPhoto>> fetchRecentPhotosFlexible({int limit = 50}) async {
   try {
-    final db = FirebaseDatabase.instance.ref();
+    final db = primaryDatabase().ref();
     final snap = await db
         .child('photo_snapshots')
         .orderByChild('timestamp')
@@ -4008,7 +4338,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoRefreshEnabled = false;
   double _autoRefreshInterval = 60.0; // seconds
   String _selectedAiModel = 'gpt-4o-mini';
-  bool _useMockWeather = true;
   Color _seedColor = Colors.green;
 
   bool get _darkMode => themeNotifier.value == ThemeMode.dark;
@@ -4028,7 +4357,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoRefreshEnabled = prefs.getBool('pref_auto_refresh_enabled') ?? false;
       _autoRefreshInterval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
       _selectedAiModel = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
-      _useMockWeather = prefs.getBool('pref_weather_use_mock') ?? true;
       final seedValue = prefs.getInt('pref_seed_color');
       if (seedValue != null) {
         _seedColor = Color(seedValue);
@@ -4159,17 +4487,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // QoL: AI model selector
           ListTile(
             title: const Text('Preferred AI model'),
-            subtitle: DropdownButton<String>(
-              value: _selectedAiModel,
-              isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
-                DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
-              ],
-              onChanged: (val) async {
-                if (val == null) return;
-                safeLightHaptic();
-                setState(() => _selectedAiModel = val);
+              subtitle: DropdownButton<String>(
+                value: _selectedAiModel,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
+                  DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
+                  DropdownMenuItem(value: 'gpt-5.1', child: Text('GPT 5.1')),
+                  DropdownMenuItem(value: 'gpt-5.2', child: Text('GPT 5.2')),
+                ],
+                onChanged: (val) async {
+                  if (val == null) return;
+                  safeLightHaptic();
+                  setState(() => _selectedAiModel = val);
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString('pref_ai_model', val);
               },
@@ -4178,22 +4508,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('Feeder notifications'),
-            subtitle: const Text('Configure alerts + simulate issues'),
+            subtitle: const Text('Configure production alerts'),
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationCenterScreen()));
             },
             trailing: const Icon(Icons.chevron_right),
-          ),
-          SwitchListTile(
-            title: const Text('Use mock weather provider'),
-            subtitle: const Text('Disable when a real API key is configured'),
-            value: _useMockWeather,
-            onChanged: (val) async {
-              safeLightHaptic();
-              setState(() => _useMockWeather = val);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('pref_weather_use_mock', val);
-            },
           ),
           const Divider(),
           ListTile(

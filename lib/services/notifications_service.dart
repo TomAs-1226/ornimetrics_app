@@ -36,6 +36,7 @@ class NotificationsService {
 
   Future<void> load() async {
     await _ensurePlugin();
+    await requestPermissions();
     final prefs = await SharedPreferences.getInstance();
     final interval = prefs.getInt('pref_cleaning_interval') ?? 7;
     final weatherSensIdx = prefs.getInt('pref_weather_sensitivity') ?? 0;
@@ -109,6 +110,25 @@ class NotificationsService {
     const iosInit = DarwinInitializationSettings();
     final initialized = await _plugin.initialize(const InitializationSettings(android: androidInit, iOS: iosInit));
     _pluginReady = initialized ?? false;
+  }
+
+  /// Prompt the user for notification permissions (Android 13+/iOS) so alerts and
+  /// foreground progress bars can render. Safe to call multiple times.
+  Future<void> requestPermissions() async {
+    await _ensurePlugin();
+    if (!_pluginReady) return;
+
+    if (Platform.isAndroid) {
+      final androidPlugin =
+          _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      // Android 13+ requires an explicit notifications permission grant.
+      await androidPlugin?.requestNotificationsPermission();
+      await androidPlugin?.requestExactAlarmsPermission();
+    } else if (Platform.isIOS || Platform.isMacOS) {
+      final iosPlugin =
+          _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
+    }
   }
 
   /// Simulate a "low food" notification; real sensor hooks can call this later.
