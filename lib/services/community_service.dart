@@ -33,7 +33,7 @@ class CommunityService {
     DataSnapshot snap;
     try {
       snap = await _ref.orderByChild('created_at').limitToLast(50).get();
-    } on FirebaseException {
+    } catch (_) {
       // Fallback if the index is missing or ordering fails; still return recent items.
       snap = await _ref.limitToLast(50).get();
     }
@@ -47,6 +47,13 @@ class CommunityService {
           posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
         }
       });
+    } else if (snap.value is List) {
+      final list = List<dynamic>.from(snap.value as List);
+      for (final value in list) {
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(posts.length.toString(), Map<dynamic, dynamic>.from(value)));
+        }
+      }
     }
 
     posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));

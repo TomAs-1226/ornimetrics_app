@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,7 +44,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   ];
 
   final CommunityService _service = CommunityService();
-  final AiProvider _ai = RealAiProvider();
+  final AiProvider _ai = RealAiProvider(apiKey: dotenv.env['OPENAI_API_KEY']);
   final _captionController = TextEditingController();
   final LocalAuthentication _localAuth = LocalAuthentication();
   final ScrollController _listController = ScrollController();
@@ -309,15 +310,29 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   }
 
   Future<void> _askAiGeneral() async {
+    final key = dotenv.env['OPENAI_API_KEY'];
+    if (key == null || key.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add OPENAI_API_KEY to .env to enable AI replies.')),
+        );
+      }
+      return;
+    }
     final messages = <AiMessage>[AiMessage('user', 'Any tips for my feeder community?')];
-    final reply = await _ai.send(
-      messages,
-      modelOverride: _aiModel,
-      context: {
-        'weather': _weather?.condition ?? 'n/a',
-        'sensors': 'n/a',
-      },
-    );
+    AiMessage reply;
+    try {
+      reply = await _ai.send(
+        messages,
+        modelOverride: _aiModel,
+        context: {
+          'weather': _weather?.condition ?? 'n/a',
+          'sensors': 'n/a',
+        },
+      );
+    } catch (e) {
+      reply = AiMessage('ai', 'AI response unavailable right now ($e). Please try again soon.');
+    }
     if (!mounted) return;
     showDialog(
       context: context,

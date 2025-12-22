@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -509,6 +508,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   String? _trendAiInsight;
   List<TrendSignal> _trendSignals = [];
   bool _showAdvancedTrends = false;
+  Map<String, Map<String, double>> _recentDailyCounts = {};
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -586,9 +586,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
-    _captureLocation().then((_) {
-      _fetchTodaySummaryFlexible();
-      _fetchPhotoSnapshots();
+    _captureLocation().then((_) async {
+      await _fetchTodaySummaryFlexible();
+      await _fetchPhotoSnapshots();
+      await _loadTrendSummaries();
     });
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
@@ -695,6 +696,92 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     return out; // may be empty
   }
 
+  Map<String, double> _extractSummaryCounts(dynamic value) {
+    if (value is! Map) return <String, double>{};
+    final map = Map<dynamic, dynamic>.from(value as Map);
+    final counts = <String, double>{};
+    map.forEach((k, v) {
+      if (k.toString() == 'summary' && v is Map) {
+        _mergeCountsInPlace(counts, _toCountsFromValue(v));
+      } else if (v is Map) {
+        _mergeCountsInPlace(counts, _extractSummaryCounts(v));
+      }
+    });
+    return counts;
+  }
+
+  List<TrendSignal> _trendSignalsFromDailyCounts(Map<String, Map<String, double>> daily) {
+    if (daily.isEmpty) return <TrendSignal>[];
+
+    final dates = daily.keys.toList()..sort();
+    final recent = dates.sublist(math.max(0, dates.length - 7));
+    if (recent.isEmpty) return <TrendSignal>[];
+
+    final species = <String>{};
+    for (final d in recent) {
+      species.addAll(daily[d]?.keys ?? <String>[]);
+    }
+    if (species.isEmpty) return <TrendSignal>[];
+
+    final window = math.max(1, (recent.length / 2).ceil());
+    double avgFor(String sp, Iterable<String> days) {
+      double sum = 0;
+      int count = 0;
+      for (final d in days) {
+        sum += (daily[d]?[sp] ?? 0);
+        count++;
+      }
+      return count == 0 ? 0 : sum / count;
+    }
+
+    final startDays = recent.take(window);
+    final endDays = recent.skip(recent.length - window);
+
+    final signals = species.map((sp) {
+      final startAvg = avgFor(sp, startDays);
+      final endAvg = avgFor(sp, endDays);
+      return TrendSignal(species: sp, start: startAvg.round(), end: endAvg.round());
+    }).toList();
+
+    signals.sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    return signals;
+  }
+
+  void _rebuildTrendSignals() {
+    final fromDaily = _trendSignalsFromDailyCounts(_recentDailyCounts);
+    final fallback = _deriveTrendsFromPhotos(_photos);
+    if (!mounted) return;
+    setState(() {
+      _trendSignals = fromDaily.isNotEmpty ? fromDaily : fallback;
+    });
+  }
+
+  Future<void> _loadTrendSummaries({int lookbackDays = 14}) async {
+    try {
+      final snap = await primaryDatabase().ref('detections').orderByKey().limitToLast(lookbackDays).get();
+      final Map<String, Map<String, double>> daily = {};
+      if (snap.exists && snap.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+        raw.forEach((k, v) {
+          final counts = _extractSummaryCounts(v);
+          if (counts.isNotEmpty) daily[k.toString()] = counts;
+        });
+      }
+      if (!mounted) return;
+      setState(() {
+        _recentDailyCounts = daily;
+      });
+      _rebuildTrendSignals();
+    } catch (e) {
+      if (mounted) {
+        debugPrint('trend summaries load failed: $e');
+      }
+      if (_trendSignals.isEmpty) {
+        _rebuildTrendSignals();
+      }
+    }
+  }
+
   Future<void> _fetchTodaySummaryFlexible({String sessionKey = 'session_1'}) async {
     try {
       final db = primaryDatabase().ref();
@@ -743,6 +830,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ? 'No summary found for $today. Showing latest available if present.'
             : '';
       });
+      _rebuildTrendSignals();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -752,6 +840,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _lastUpdated = DateTime.now();
         _error = 'Failed to load data: $e';
       });
+      _rebuildTrendSignals();
     }
   }
 
@@ -761,6 +850,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       _fetchPhotoSnapshots(),
       _fetchTodaySummaryFlexible(),
     ]);
+    await _loadTrendSummaries();
   }
 
   Future<void> _fetchPhotoSnapshots() async {
@@ -821,15 +911,18 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
-      final trendSignals = _deriveTrendsFromPhotos(items);
-
       if (!mounted) return;
       setState(() {
         _photos = items;
         _loadingPhotos = false;
         _photosLastUpdated = DateTime.now();
-        _trendSignals = trendSignals;
+        if (_position == null) {
+          _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
+        } else if (_photoError.isNotEmpty && _locationStatus == null) {
+          _photoError = '';
+        }
       });
+      _rebuildTrendSignals();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3153,43 +3246,60 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget _buildTrendsCard() {
     return LayoutBuilder(builder: (context, constraints) {
       final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
+      final isNarrow = constraints.maxWidth < 420;
+      final actionRow = Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            onPressed: _trendSignals.isEmpty
+                ? null
+                : () {
+                    setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+                  },
+            icon: const Icon(Icons.analytics_outlined),
+            label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+          ),
+          IconButton(
+            icon: _trendAiLoading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.auto_awesome),
+            tooltip: 'Ask AI for migration insight',
+            onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+          )
+        ],
+      );
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: WrapAlignment.spaceBetween,
-                children: [
-                  const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                  Wrap(
-                    spacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      TextButton.icon(
-                        onPressed: _trendSignals.isEmpty
-                            ? null
-                            : () {
-                                setState(() => _showAdvancedTrends = !_showAdvancedTrends);
-                              },
-                        icon: const Icon(Icons.analytics_outlined),
-                        label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+              if (isNarrow)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Migration & activity trends',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    actionRow,
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Migration & activity trends',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                       ),
-                      IconButton(
-                        icon: _trendAiLoading
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.auto_awesome),
-                        tooltip: 'Ask AI for migration insight',
-                        onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
-                      )
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(child: actionRow),
+                  ],
+                ),
               const SizedBox(height: 8),
               if (_trendSignals.isEmpty)
                 Text(
