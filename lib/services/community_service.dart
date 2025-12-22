@@ -30,7 +30,13 @@ class CommunityService {
   }
 
   Future<List<CommunityPost>> fetchPosts() async {
-    final snap = await _ref.orderByChild('created_at').limitToLast(50).get();
+    DataSnapshot snap;
+    try {
+      snap = await _ref.orderByChild('created_at').limitToLast(50).get();
+    } on FirebaseException {
+      // Fallback if the index is missing or ordering fails; still return recent items.
+      snap = await _ref.limitToLast(50).get();
+    }
     if (snap.value == null) return [];
 
     final List<CommunityPost> posts = [];

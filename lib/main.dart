@@ -909,7 +909,11 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     }
 
     final sortedDays = perDay.keys.toList()..sort();
-    if (sortedDays.isEmpty) return [];
+    if (sortedDays.isEmpty) {
+      return _speciesDataMap.entries
+          .map((e) => TrendSignal(species: e.key, start: e.value.toInt(), end: e.value.toInt()))
+          .toList();
+    }
 
     // Smooth the trend by comparing the early and late halves of the window (up to 3-day averages).
     final Set<String> allSpecies = perDay.values.expand((m) => m.keys).toSet();
@@ -3155,27 +3159,35 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
                 children: [
                   const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: _trendSignals.isEmpty
-                        ? null
-                        : () {
-                            setState(() => _showAdvancedTrends = !_showAdvancedTrends);
-                          },
-                    icon: const Icon(Icons.analytics_outlined),
-                    label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+                  Wrap(
+                    spacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _trendSignals.isEmpty
+                            ? null
+                            : () {
+                                setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+                              },
+                        icon: const Icon(Icons.analytics_outlined),
+                        label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+                      ),
+                      IconButton(
+                        icon: _trendAiLoading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.auto_awesome),
+                        tooltip: 'Ask AI for migration insight',
+                        onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+                      )
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: _trendAiLoading
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.auto_awesome),
-                    tooltip: 'Ask AI for migration insight',
-                    onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
-                  )
                 ],
               ),
               const SizedBox(height: 8),
