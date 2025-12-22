@@ -60,37 +60,39 @@ class CommunityService {
   }
 
   Future<List<CommunityPost>> fetchPosts() async {
-    DataSnapshot snap;
     try {
-      snap = await _ref.orderByChild('created_at').limitToLast(50).get();
-    } on FirebaseException catch (e) {
-      // If index is missing, fall back to unordered fetch to avoid empty UI.
-      if (e.message != null && e.message!.contains('indexOn')) {
-        snap = await _ref.get();
-      } else {
-        rethrow;
+      // Plain fetch avoids index errors; we'll sort client-side.
+      final snap = await _ref.get();
+      List<CommunityPost> posts = _parsePosts(snap);
+
+      // Fallback if the snapshot has a map but no children iteration.
+      if (posts.isEmpty && snap.value != null) {
+        try {
+          final plain = await _ref.orderByKey().get();
+          posts = _parsePosts(plain);
+        } catch (_) {}
       }
-    } catch (_) {
-      snap = await _ref.get();
+
+      posts.sort((a, b) {
+        // If created_at is missing for any reason, fall back to key ordering.
+        final cmp = b.createdAt.compareTo(a.createdAt);
+        if (cmp != 0) return cmp;
+        return b.id.compareTo(a.id);
+      });
+
+      // Keep only the newest 100 to cap UI churn.
+      if (posts.length > 100) {
+        posts = posts.take(100).toList();
+      }
+
+      return posts;
+    } catch (e) {
+      throw FirebaseException(
+        plugin: 'firebase_database',
+        code: 'community_fetch_failed',
+        message: e.toString(),
+      );
     }
-
-    List<CommunityPost> posts = _parsePosts(snap);
-
-    // Fallback: if ordered query returned empty (e.g., missing index), try plain fetch.
-    if (posts.isEmpty && snap.value != null) {
-      try {
-        final plain = await _ref.orderByKey().get();
-        posts = _parsePosts(plain);
-      } catch (_) {}
-    }
-
-    posts.sort((a, b) {
-      // If created_at is missing for any reason, fall back to key ordering.
-      final cmp = b.createdAt.compareTo(a.createdAt);
-      if (cmp != 0) return cmp;
-      return b.id.compareTo(a.id);
-    });
-    return posts;
   }
 
   Future<void> createPost({
