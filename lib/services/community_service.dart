@@ -153,7 +153,7 @@ class CommunityService {
       }
       final posts = _parsePosts(snap)..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return posts;
-    });
+    }).handleError((_) => <CommunityPost>[]);
   }
 
   Future<void> createPost({
@@ -175,8 +175,18 @@ class CommunityService {
 
     await FirebaseAuth.instance.currentUser?.reload();
     String? uploadedUrl;
+    Uint8List? inlineBytes;
     if (photo != null) {
-      uploadedUrl = await _storage.uploadCommunityPhoto(file: photo, uid: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous');
+      try {
+        uploadedUrl = await _storage.uploadCommunityPhoto(file: photo, uid: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous');
+      } catch (e) {
+        // Fallback to inline base64 to keep the post functional if storage upload fails.
+        try {
+          inlineBytes = await photo.readAsBytes();
+        } catch (_) {}
+        if (inlineBytes == null) rethrow;
+      }
+      inlineBytes ??= await photo.readAsBytes();
     }
 
     try {
@@ -185,6 +195,7 @@ class CommunityService {
         author: author.trim().isEmpty ? 'community member' : author.trim(),
         caption: sanitizedCaption,
         imageUrl: uploadedUrl,
+        imageData: inlineBytes,
         createdAt: DateTime.now(),
         timeOfDayTag: _timeOfDayFor(DateTime.now()),
         sensors: sensors,

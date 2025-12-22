@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:firebase_database/firebase_database.dart';
 
 import 'weather_models.dart';
@@ -31,6 +34,7 @@ class CommunityPost {
   final String author;
   final String caption;
   final String? imageUrl;
+  final Uint8List? imageData;
   final DateTime createdAt;
   final String timeOfDayTag;
   final WeatherSnapshot? weather;
@@ -45,6 +49,7 @@ class CommunityPost {
     required this.timeOfDayTag,
     required this.sensors,
     required this.model,
+    this.imageData,
     this.imageUrl,
     this.weather,
   });
@@ -63,6 +68,7 @@ class CommunityPost {
       author: normalized['author']?.toString() ?? 'anon',
       caption: normalized['caption']?.toString() ?? '',
       imageUrl: normalized['image_url']?.toString(),
+      imageData: _decodeInlineImage(normalized['image_base64']?.toString()),
       createdAt: _parseTimestamp(normalized['created_at']),
       timeOfDayTag: normalized['time_of_day']?.toString() ?? 'daytime',
       model: normalized['model']?.toString() ?? 'Ornimetrics O1 feeder',
@@ -93,6 +99,7 @@ class CommunityPost {
     'author': author,
     'caption': caption,
     'image_url': imageUrl,
+    if (imageData != null) 'image_base64': 'data:image/jpeg;base64,${base64Encode(imageData!)}',
     'created_at': ServerValue.timestamp,
     'time_of_day': timeOfDayTag,
     'model': model,
@@ -130,4 +137,14 @@ DateTime _parseTimestamp(dynamic v) {
     return DateTime.tryParse(v) ?? DateTime.now();
   }
   return DateTime.now();
+}
+
+Uint8List? _decodeInlineImage(String? data) {
+  if (data == null || data.isEmpty) return null;
+  try {
+    final cleaned = data.startsWith('data:') ? data.split(',').last : data;
+    return base64Decode(cleaned);
+  } catch (_) {
+    return null;
+  }
 }

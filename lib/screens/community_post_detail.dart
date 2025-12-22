@@ -193,11 +193,13 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
             ),
             const SizedBox(height: 12),
             Text(p.caption, style: const TextStyle(fontSize: 16)),
-            if (p.imageUrl != null) ...[
+            if (p.imageData != null || p.imageUrl != null) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(p.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                child: p.imageData != null
+                    ? Image.memory(p.imageData!, height: 200, width: double.infinity, fit: BoxFit.cover)
+                    : Image.network(p.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover),
               )
             ],
             const SizedBox(height: 12),

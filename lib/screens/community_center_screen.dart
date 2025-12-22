@@ -1053,13 +1053,15 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
                   p.caption.isNotEmpty ? p.caption : '(No caption)',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: fg),
                 ),
-                if (p.imageUrl != null) ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
-                  )
-                ],
+            if (p.imageData != null || p.imageUrl != null) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: p.imageData != null
+                    ? Image.memory(p.imageData!, height: 180, width: double.infinity, fit: BoxFit.cover)
+                    : Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
+              )
+            ],
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
