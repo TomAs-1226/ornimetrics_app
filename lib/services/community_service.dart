@@ -31,10 +31,29 @@ class CommunityService {
 
   List<CommunityPost> _parsePosts(DataSnapshot snap) {
     final List<CommunityPost> posts = [];
-    for (final child in snap.children) {
-      final value = child.value;
-      if (value is Map) {
-        posts.add(CommunityPost.fromRealtime(child.key ?? '', Map<dynamic, dynamic>.from(value)));
+    // Prefer children iteration (works for ordered queries).
+    if (snap.children.isNotEmpty) {
+      for (final child in snap.children) {
+        final value = child.value;
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(child.key ?? '', Map<dynamic, dynamic>.from(value)));
+        }
+      }
+    } else if (snap.value is Map) {
+      // Fallback to map iteration if children list is empty.
+      final data = Map<dynamic, dynamic>.from(snap.value as Map);
+      data.forEach((key, value) {
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(key.toString(), Map<dynamic, dynamic>.from(value)));
+        }
+      });
+    } else if (snap.value is List) {
+      final list = List<dynamic>.from(snap.value as List);
+      for (int i = 0; i < list.length; i++) {
+        final value = list[i];
+        if (value is Map) {
+          posts.add(CommunityPost.fromRealtime(i.toString(), Map<dynamic, dynamic>.from(value)));
+        }
       }
     }
     return posts;
@@ -53,12 +72,17 @@ class CommunityService {
     // Fallback: if ordered query returned empty (e.g., missing index), try plain fetch.
     if (posts.isEmpty && snap.value != null) {
       try {
-        final plain = await _ref.get();
+        final plain = await _ref.orderByKey().get();
         posts = _parsePosts(plain);
       } catch (_) {}
     }
 
-    posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    posts.sort((a, b) {
+      // If created_at is missing for any reason, fall back to key ordering.
+      final cmp = b.createdAt.compareTo(a.createdAt);
+      if (cmp != 0) return cmp;
+      return b.id.compareTo(a.id);
+    });
     return posts;
   }
 
