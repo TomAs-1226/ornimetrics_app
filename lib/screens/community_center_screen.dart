@@ -283,9 +283,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
   }
 
   Future<void> _refreshPosts() async {
-    setState(() {
-      _postsStream = _service.watchCommunityPosts(limit: _postLimit);
-    });
+    try {
+      final nextStream = _service.watchCommunityPosts(limit: _postLimit);
+      if (!mounted) return;
+      setState(() {
+        _postsStream = nextStream;
+        _status = '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Could not refresh feed: $e');
+    }
   }
 
   List<CommunityPost> _filterPosts(List<CommunityPost> posts) {
@@ -502,13 +510,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
       _status = '';
     });
     try {
-      await _service.createPost(
+      await _service
+          .createPost(
         caption: _captionController.text.trim(),
         photo: _photo,
         author: refreshedUser.email ?? 'community member',
         sensors: SensorSnapshot(lowFood: _tagFoodLow, clogged: _tagClogged, cleaningDue: _tagCleaningDue),
         weather: _weather,
-      );
+      )
+          .timeout(const Duration(seconds: 45), onTimeout: () {
+        throw TimeoutException('Posting took too long. Check your connection and try again.');
+      });
       _captionController.clear();
       _photo = null;
       await _refreshPosts();
