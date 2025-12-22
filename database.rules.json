@@ -1,6 +1,12 @@
 {
   "rules": {
     ".read": true,
-    ".write": true
+    ".write": true,
+    "community_posts": {
+      ".indexOn": ["created_at"]
+    },
+    "photo_snapshots": {
+      ".indexOn": ["timestamp"]
+    }
   }
 }

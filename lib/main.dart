@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -28,6 +27,7 @@ import 'screens/notification_center_screen.dart';
 import 'services/ai_provider.dart';
 import 'services/location_service.dart';
 import 'services/community_storage_service.dart';
+import 'services/community_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
@@ -77,22 +77,22 @@ class DetectionPhoto {
       species: m['species']?.toString(),
       weatherAtCapture: m['weather'] is Map
           ? WeatherSnapshot(
-              condition: m['weather']['condition']?.toString() ?? 'Unknown',
-              temperatureC: (m['weather']['temperatureC'] as num?)?.toDouble() ?? 0,
-              humidity: (m['weather']['humidity'] as num?)?.toDouble() ?? 0,
-              precipitationChance: (m['weather']['precipitationChance'] as num?)?.toDouble(),
-              windKph: (m['weather']['windKph'] as num?)?.toDouble(),
-              pressureMb: (m['weather']['pressureMb'] as num?)?.toDouble(),
-              uvIndex: (m['weather']['uvIndex'] as num?)?.toDouble(),
-              visibilityKm: (m['weather']['visibilityKm'] as num?)?.toDouble(),
-              dewPointC: (m['weather']['dewPointC'] as num?)?.toDouble(),
-              fetchedAt: _parseTs(m['weather']['fetchedAt']),
-              isRaining: m['weather']['isRaining'] == true,
-              isSnowing: m['weather']['isSnowing'] == true,
-              isHailing: m['weather']['isHailing'] == true,
-              feelsLikeC: (m['weather']['feelsLikeC'] as num?)?.toDouble(),
-              precipitationMm: (m['weather']['precipitationMm'] as num?)?.toDouble(),
-            )
+        condition: m['weather']['condition']?.toString() ?? 'Unknown',
+        temperatureC: (m['weather']['temperatureC'] as num?)?.toDouble() ?? 0,
+        humidity: (m['weather']['humidity'] as num?)?.toDouble() ?? 0,
+        precipitationChance: (m['weather']['precipitationChance'] as num?)?.toDouble(),
+        windKph: (m['weather']['windKph'] as num?)?.toDouble(),
+        pressureMb: (m['weather']['pressureMb'] as num?)?.toDouble(),
+        uvIndex: (m['weather']['uvIndex'] as num?)?.toDouble(),
+        visibilityKm: (m['weather']['visibilityKm'] as num?)?.toDouble(),
+        dewPointC: (m['weather']['dewPointC'] as num?)?.toDouble(),
+        fetchedAt: _parseTs(m['weather']['fetchedAt']),
+        isRaining: m['weather']['isRaining'] == true,
+        isSnowing: m['weather']['isSnowing'] == true,
+        isHailing: m['weather']['isHailing'] == true,
+        feelsLikeC: (m['weather']['feelsLikeC'] as num?)?.toDouble(),
+        precipitationMm: (m['weather']['precipitationMm'] as num?)?.toDouble(),
+      )
           : null,
     );
   }
@@ -158,16 +158,16 @@ class EcoTask {
   }
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'title': title,
-        'description': description,
-        'category': category,
-        'priority': priority,
-        'createdAt': createdAt.toIso8601String(),
-        'dueAt': dueAt?.toIso8601String(),
-        'done': done,
-        'source': source,
-      };
+    'id': id,
+    'title': title,
+    'description': description,
+    'category': category,
+    'priority': priority,
+    'createdAt': createdAt.toIso8601String(),
+    'dueAt': dueAt?.toIso8601String(),
+    'done': done,
+    'source': source,
+  };
 }
 
 // Safe haptic helpers
@@ -227,7 +227,7 @@ Future<FirebaseApp> _ensureFirebaseInitialized() async {
   if (placeholders.any((e) => (e ?? '').startsWith('REPLACE_ME'))) {
     throw StateError(
       'Firebase configuration is missing. Regenerate lib/firebase_options.dart with "flutterfire configure" '
-      'and use matching google-services.json / GoogleService-Info.plist.',
+          'and use matching google-services.json / GoogleService-Info.plist.',
     );
   }
   try {
@@ -250,6 +250,8 @@ void main() async {
   await dotenv.load();
   await _ensureFirebaseInitialized();
   debugPrint('[firebase] Using production backends for realtime database and firestore.');
+  // One-time diagnostic to confirm RTDB visibility.
+  await CommunityService().logDiagnostics();
 
   // ── Load saved theme preference
   final prefs = await SharedPreferences.getInstance();
@@ -286,6 +288,7 @@ class WildlifeApp extends StatelessWidget {
           valueListenable: themeNotifier,
           builder: (_, mode, __) {
             return MaterialApp(
+              navigatorObservers: [communityRouteObserver],
               title: 'Ornimetrics Tracker',
               debugShowCheckedModeBanner: false,
               themeMode: mode,
@@ -362,7 +365,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     if (autoRefreshEnabledNotifier.value) {
       _autoRefreshTimer = Timer.periodic(
         Duration(seconds: autoRefreshIntervalNotifier.value.round()),
-        (_) {
+            (_) {
           _refreshAll();
         },
       );
@@ -509,6 +512,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   String? _trendAiInsight;
   List<TrendSignal> _trendSignals = [];
   bool _showAdvancedTrends = false;
+  bool _trendsCollapsed = false;
+  Map<String, Map<String, double>> _recentDailyCounts = {};
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -584,13 +589,45 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     autoRefreshIntervalNotifier.addListener(_updateAutoRefresh);
     _updateAutoRefresh(); // Initialize based on current settings
     _loadMaintenanceStatus();
+    _maybePromptNotifications();
     _loadAiPrefs();
     _loadTasks();
-    _captureLocation().then((_) {
-      _fetchTodaySummaryFlexible();
-      _fetchPhotoSnapshots();
-    });
+    _captureLocation(); // Do not block initial renders on location.
+    unawaited(Future(() async {
+      await _fetchTodaySummaryFlexible();
+      await _fetchPhotoSnapshots();
+      await _loadTrendSummaries();
+    }));
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
+  }
+
+  Future<void> _maybePromptNotifications() async {
+    final service = NotificationsService.instance;
+    if (service.permissionsPrompted.value) return;
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enable live notifications'),
+        content: const Text(
+            'Turn on feeder alerts and live activity updates. You can change this anytime in settings.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await NotificationsService.instance.requestPermissions();
+            },
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
 
@@ -695,6 +732,99 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     return out; // may be empty
   }
 
+  Map<String, double> _extractSummaryCounts(dynamic value) {
+    if (value is! Map) return <String, double>{};
+    final map = Map<dynamic, dynamic>.from(value as Map);
+    final counts = <String, double>{};
+    map.forEach((k, v) {
+      if (k.toString() == 'summary' && v is Map) {
+        _mergeCountsInPlace(counts, _toCountsFromValue(v));
+      } else if (v is Map) {
+        _mergeCountsInPlace(counts, _extractSummaryCounts(v));
+      }
+    });
+    return counts;
+  }
+
+  List<TrendSignal> _trendSignalsFromDailyCounts(Map<String, Map<String, double>> daily) {
+    if (daily.isEmpty) return <TrendSignal>[];
+
+    final dates = daily.keys.toList()..sort();
+    final recent = dates.sublist(math.max(0, dates.length - 7));
+    if (recent.isEmpty) return <TrendSignal>[];
+
+    final species = <String>{};
+    for (final d in recent) {
+      species.addAll(daily[d]?.keys ?? <String>[]);
+    }
+    if (species.isEmpty) return <TrendSignal>[];
+
+    final window = math.max(1, (recent.length / 2).ceil());
+    double avgFor(String sp, Iterable<String> days) {
+      double sum = 0;
+      int count = 0;
+      for (final d in days) {
+        sum += (daily[d]?[sp] ?? 0);
+        count++;
+      }
+      return count == 0 ? 0 : sum / count;
+    }
+
+    final startDays = recent.take(window);
+    final endDays = recent.skip(recent.length - window);
+
+    final signals = species.map((sp) {
+      final startAvg = avgFor(sp, startDays);
+      final endAvg = avgFor(sp, endDays);
+      return TrendSignal(species: sp, start: startAvg.round(), end: endAvg.round());
+    }).toList();
+
+    signals.sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    return signals;
+  }
+
+  void _rebuildTrendSignals() {
+    final fromDaily = _trendSignalsFromDailyCounts(_recentDailyCounts);
+    final fallback = _deriveTrendsFromPhotos(_photos);
+    if (!mounted) return;
+    setState(() {
+      _trendSignals = fromDaily.isNotEmpty ? fromDaily : fallback;
+    });
+  }
+
+  List<TrendSignal> _sortedChangingTrends({int? limit}) {
+    final changing = _trendSignals.where((s) => s.delta != 0).toList()
+      ..sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
+    if (limit == null) return changing;
+    return changing.take(limit).toList();
+  }
+
+  Future<void> _loadTrendSummaries({int lookbackDays = 14}) async {
+    try {
+      final snap = await primaryDatabase().ref('detections').orderByKey().limitToLast(lookbackDays).get();
+      final Map<String, Map<String, double>> daily = {};
+      if (snap.exists && snap.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+        raw.forEach((k, v) {
+          final counts = _extractSummaryCounts(v);
+          if (counts.isNotEmpty) daily[k.toString()] = counts;
+        });
+      }
+      if (!mounted) return;
+      setState(() {
+        _recentDailyCounts = daily;
+      });
+      _rebuildTrendSignals();
+    } catch (e) {
+      if (mounted) {
+        debugPrint('trend summaries load failed: $e');
+      }
+      if (_trendSignals.isEmpty) {
+        _rebuildTrendSignals();
+      }
+    }
+  }
+
   Future<void> _fetchTodaySummaryFlexible({String sessionKey = 'session_1'}) async {
     try {
       final db = primaryDatabase().ref();
@@ -743,6 +873,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             ? 'No summary found for $today. Showing latest available if present.'
             : '';
       });
+      _rebuildTrendSignals();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -752,15 +883,17 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _lastUpdated = DateTime.now();
         _error = 'Failed to load data: $e';
       });
+      _rebuildTrendSignals();
     }
   }
 
   Future<void> _refreshAll() async {
-    await _captureLocation();
+    _captureLocation();
     await Future.wait([
       _fetchPhotoSnapshots(),
       _fetchTodaySummaryFlexible(),
     ]);
+    await _loadTrendSummaries();
   }
 
   Future<void> _fetchPhotoSnapshots() async {
@@ -821,15 +954,18 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
-      final trendSignals = _deriveTrendsFromPhotos(items);
-
       if (!mounted) return;
       setState(() {
         _photos = items;
         _loadingPhotos = false;
         _photosLastUpdated = DateTime.now();
-        _trendSignals = trendSignals;
+        if (_position == null) {
+          _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
+        } else if (_photoError.isNotEmpty && _locationStatus == null) {
+          _photoError = '';
+        }
       });
+      _rebuildTrendSignals();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1069,7 +1205,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                 {
                   'type': 'text',
                   'text':
-                      'You are an expert wildlife biologist. Analyze the species counts and the attached photos together. '
+                  'You are an expert wildlife biologist. Analyze the species counts and the attached photos together. '
                       'Base your conclusions on BOTH evidence sources. '
                       'Return a compact JSON object with this schema: {"analysis": string, "assessment": string, "recommendations": [string, ...], "tasks": [{"title": string, "category": "cleaning"|"window_safety"|"habitat"|"water"|"data", "priority": 1|2|3, "suggestedDueDays": number, "note"?: string}] }. '
                       'Be specific (cite observed species/traits visible in photos when possible). '
@@ -1239,16 +1375,16 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         ),
         floatingActionButton: _showFab
             ? FloatingActionButton(
-                onPressed: () {
-                  safeSelectionHaptic();
-                  _scrollController.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeOut,
-                  );
-                },
-                child: const Icon(Icons.arrow_upward),
-              )
+          onPressed: () {
+            safeSelectionHaptic();
+            _scrollController.animateTo(
+              0,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOut,
+            );
+          },
+          child: const Icon(Icons.arrow_upward),
+        )
             : null,
       ),
     );
@@ -1258,68 +1394,74 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
         : _error.isNotEmpty
-            ? Center(child: Text(_error, style: const TextStyle(color: Colors.red)))
-            : RefreshIndicator(
-                onRefresh: () async {
-                  await _refreshAll();
-                },
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16.0),
-                  children: [
-                    const Text(
-                      'Live Animal Detection',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    if (_lastUpdated != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0, bottom: 12.0),
-                        child: Text(
-                          'Last updated: ${DateFormat('MMM d, yyyy – hh:mm a').format(_lastUpdated!)}',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                    Text(
-                      'Real-time data from Ornimetrics',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      child: _showMaintenanceBanner
-                          ? Padding(
-                              key: const ValueKey('maint-banner'),
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _buildMaintenanceBanner(),
-                            )
-                          : const SizedBox.shrink(key: ValueKey('maint-banner-empty')),
-                    ),
-                    _buildNotificationCard(),
-                    const SizedBox(height: 16),
-                    _buildSummaryCards(),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Species Distribution',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDistributionCard(),
-                    const SizedBox(height: 16),
-                    _buildBiodiversityCard(),
-                    const SizedBox(height: 16),
-                    _buildHourlyActivityCard(),
-                    const SizedBox(height: 24),
-            _buildTasksCard(),
-            const SizedBox(height: 24),
-                    _buildTrendsCard(),
-                    const SizedBox(height: 24),
-                    _buildAiAnalysisCard(),
-                  ],
-                ),
-              );
+        ? Center(child: Text(_error, style: const TextStyle(color: Colors.red)))
+        : RefreshIndicator(
+      onRefresh: () async {
+        await _refreshAll();
+      },
+      child: ListView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          const Text(
+            'Live Animal Detection',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          if (_lastUpdated != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0, bottom: 12.0),
+              child: Text(
+                'Last updated: ${DateFormat('MMM d, yyyy – hh:mm a').format(_lastUpdated!)}',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+          Text(
+            'Real-time data from Ornimetrics',
+            style: TextStyle(
+              fontSize: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 20),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: _showMaintenanceBanner
+                ? Padding(
+              key: const ValueKey('maint-banner'),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildMaintenanceBanner(),
+            )
+                : const SizedBox.shrink(key: ValueKey('maint-banner-empty')),
+          ),
+          ValueListenableBuilder<bool>(
+            valueListenable: NotificationsService.instance.permissionsPrompted,
+            builder: (_, prompted, __) {
+              if (prompted) return const SizedBox.shrink();
+              return _buildNotificationCard();
+            },
+          ),
+          const SizedBox(height: 16),
+          _buildSummaryCards(),
+          const SizedBox(height: 24),
+          const Text(
+            'Species Distribution',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          _buildDistributionCard(),
+          const SizedBox(height: 16),
+          _buildBiodiversityCard(),
+          const SizedBox(height: 16),
+          _buildHourlyActivityCard(),
+          const SizedBox(height: 24),
+          _buildTasksCard(),
+          const SizedBox(height: 24),
+          _buildTrendsCard(),
+          const SizedBox(height: 24),
+          _buildAiAnalysisCard(),
+        ],
+      ),
+    );
   }
 
   String _formatTs(DateTime dt) => DateFormat('MMM d, yyyy – hh:mm a').format(dt);
@@ -2141,8 +2283,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       builder: (ctx, setLocal) {
         final filtered = entriesAll
             .where((e) =>
-                query.trim().isEmpty ||
-                _formatSpeciesName(e.key).toLowerCase().contains(query.toLowerCase()))
+        query.trim().isEmpty ||
+            _formatSpeciesName(e.key).toLowerCase().contains(query.toLowerCase()))
             .toList()
           ..sort((a, b) {
             if (sortByCount) return b.value.compareTo(a.value);
@@ -2880,8 +3022,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         const Text("Overview", style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         const Text(
-          "Shannon diversity sums up both how many species you have and how evenly observations are spread. "
-          "Higher values mean a more varied community where no single species dominates."
+            "Shannon diversity sums up both how many species you have and how evenly observations are spread. "
+                "Higher values mean a more varied community where no single species dominates."
         ),
         const SizedBox(height: 12),
         const Text("How to read it", style: TextStyle(fontWeight: FontWeight.w700)),
@@ -2921,8 +3063,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         const Text("Overview", style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         const Text(
-          "Gini–Simpson (shown here as 1−D) tells you the chance that two random detections are different species. "
-          "Values closer to 1 mean higher diversity; values near 0 mean one or a few species dominate."
+            "Gini–Simpson (shown here as 1−D) tells you the chance that two random detections are different species. "
+                "Values closer to 1 mean higher diversity; values near 0 mean one or a few species dominate."
         ),
         const SizedBox(height: 12),
         const Text("How to read it", style: TextStyle(fontWeight: FontWeight.w700)),
@@ -2962,8 +3104,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         const Text("Overview", style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         const Text(
-          "Pielou’s evenness (J') shows how evenly detections are spread across species. "
-          "Closer to 1 means species are seen in comparable amounts; lower values mean a few species dominate."
+            "Pielou’s evenness (J') shows how evenly detections are spread across species. "
+                "Closer to 1 means species are seen in comparable amounts; lower values mean a few species dominate."
         ),
         const SizedBox(height: 12),
         const Text("How to read it", style: TextStyle(fontWeight: FontWeight.w700)),
@@ -3150,48 +3292,160 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  void _openAllTrendsDialog() {
+    final changing = _sortedChangingTrends();
+    if (changing.isEmpty) return;
+    safeLightHaptic();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            return ListView.builder(
+              controller: controller,
+              padding: const EdgeInsets.all(16),
+              itemCount: changing.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.trending_up),
+                        const SizedBox(width: 8),
+                        const Text('All recent changes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                          label: const Text('Close'),
+                        )
+                      ],
+                    ),
+                  );
+                }
+                final s = changing[i - 1];
+                final pct = (s.changeRate * 100).toStringAsFixed(1);
+                final dir = s.direction == 'rising'
+                    ? 'Increase'
+                    : s.direction == 'falling'
+                    ? 'Decrease'
+                    : 'Steady';
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      child: Icon(
+                        s.direction == 'rising'
+                            ? Icons.trending_up
+                            : s.direction == 'falling'
+                            ? Icons.trending_down
+                            : Icons.horizontal_rule,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    title: Text(_formatSpeciesName(s.species), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(
+                      '$dir • ${s.start} → ${s.end} (Δ ${s.delta >= 0 ? '+' : ''}${s.delta}, $pct%)',
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('Start: ${s.start}', style: const TextStyle(fontSize: 12)),
+                        Text('End: ${s.end}', style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildTrendsCard() {
     return LayoutBuilder(builder: (context, constraints) {
       final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
+      final isNarrow = constraints.maxWidth < 420;
+      final actionRow = Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          IconButton(
+            icon: Icon(_trendsCollapsed ? Icons.unfold_more : Icons.unfold_less),
+            tooltip: _trendsCollapsed ? 'Expand trends' : 'Collapse trends',
+            onPressed: () => setState(() => _trendsCollapsed = !_trendsCollapsed),
+          ),
+          TextButton.icon(
+            onPressed: _trendSignals.isEmpty
+                ? null
+                : () {
+              setState(() => _showAdvancedTrends = !_showAdvancedTrends);
+            },
+            icon: const Icon(Icons.analytics_outlined),
+            label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+          ),
+          TextButton.icon(
+            onPressed: _trendSignals.where((s) => s.delta != 0).isEmpty ? null : _openAllTrendsDialog,
+            icon: const Icon(Icons.list_alt_outlined),
+            label: const Text('See all changes'),
+          ),
+          IconButton(
+            icon: _trendAiLoading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.auto_awesome),
+            tooltip: 'Ask AI for migration insight',
+            onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
+          )
+        ],
+      );
+      final changing = _sortedChangingTrends();
+      final topThree = _sortedChangingTrends(limit: 3);
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: WrapAlignment.spaceBetween,
-                children: [
-                  const Text('Migration & activity trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                  Wrap(
-                    spacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      TextButton.icon(
-                        onPressed: _trendSignals.isEmpty
-                            ? null
-                            : () {
-                                setState(() => _showAdvancedTrends = !_showAdvancedTrends);
-                              },
-                        icon: const Icon(Icons.analytics_outlined),
-                        label: Text(_showAdvancedTrends ? 'Hide advanced' : 'Advanced stats'),
+              if (isNarrow)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Migration & activity trends',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    actionRow,
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Migration & activity trends',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                       ),
-                      IconButton(
-                        icon: _trendAiLoading
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.auto_awesome),
-                        tooltip: 'Ask AI for migration insight',
-                        onPressed: _trendSignals.isEmpty || _trendAiLoading ? null : _generateTrendAiInsight,
-                      )
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(child: actionRow),
+                  ],
+                ),
               const SizedBox(height: 8),
-              if (_trendSignals.isEmpty)
+              if (changing.isEmpty)
                 Text(
                   'Need more data to spot trends. Add snapshots with species labels over several days.',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -3200,23 +3454,36 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _trendSignals.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Algorithmic view: highlighting strongest 7-day changes (increase/decrease).',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    if (_showAdvancedTrends) ...[
+                    if (!_trendsCollapsed) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: topThree.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                      ),
                       const SizedBox(height: 12),
-                      Text('Advanced details', style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'Top movers over the last 7 days (by % change).',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ] else ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: topThree.map((s) => _buildTrendChip(context, s, chipMaxWidth)).toList(),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Collapsed — tap expand or \"See all changes\" for details.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                    ],
+                    if (_showAdvancedTrends && topThree.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text('Advanced details (top 3)', style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 6),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _trendSignals.map((s) => _buildTrendDetailRow(context, s)).toList(),
+                        children: topThree.map((s) => _buildTrendDetailRow(context, s)).toList(),
                       ),
                     ]
                   ],
@@ -3238,25 +3505,53 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final icon = s.direction == 'rising'
         ? Icons.trending_up
         : s.direction == 'falling'
-            ? Icons.trending_down
-            : Icons.remove;
+        ? Icons.trending_down
+        : Icons.remove;
+    final pct = (s.changeRate * 100).toStringAsFixed(1);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: chipMaxWidth),
-      child: Chip(
-        avatar: Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-        label: Text(
-          '${_formatSpeciesName(s.species)}: ${s.start} → ${s.end} (${s.direction})',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          softWrap: true,
-          overflow: TextOverflow.visible,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(12),
         ),
-        labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _formatSpeciesName(s.species),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text('${s.delta >= 0 ? '+' : ''}${s.delta}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text('${s.start} → ${s.end}',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                const Spacer(),
+                Text('$pct%', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildTrendDetailRow(BuildContext context, TrendSignal s) {
     final pct = (s.changeRate * 100).toStringAsFixed(1);
+    if (s.delta == 0) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 6.0),
       child: Row(
@@ -3382,101 +3677,101 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             switchOutCurve: Curves.easeOut,
             child: _isAnalyzing
                 ? const Center(
-                    key: ValueKey('loading'),
-                    child: CircularProgressIndicator(),
-                  )
+              key: ValueKey('loading'),
+              child: CircularProgressIndicator(),
+            )
                 : (_aiAnalysisResult == null
-                    ? Center(
-                        key: const ValueKey('prompt'),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20.0),
-                          child: Text(
-                            "Click below to generate an AI analysis.",
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
+                ? Center(
+              key: const ValueKey('prompt'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20.0),
+                child: Text(
+                  "Click below to generate an AI analysis.",
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            )
+                : (_aiAnalysisResult is Map<String, dynamic>
+                ? Column(
+              key: const ValueKey('result'),
+              children: [
+                if (_aiAnalysisResult!['error'] != null)
+                  _buildInfoCard(
+                    title: "Error",
+                    content: Text(
+                      _aiAnalysisResult!['error'].toString(),
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  )
+                else ...[
+                  _buildInfoCard(
+                    title: "Current Analysis",
+                    content: Text(
+                      _aiAnalysisResult!['analysis'] ?? 'No analysis available.',
+                      style: const TextStyle(height: 1.4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    title: "Ecosystem Assessment",
+                    content: Text(
+                      _aiAnalysisResult!['assessment'] ?? 'No assessment available.',
+                      style: const TextStyle(height: 1.4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    title: "Recommendations",
+                    content: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: (_aiAnalysisResult!['recommendations'] as List<dynamic>)
+                          .map((rec) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text("• ", style: TextStyle(fontWeight: FontWeight.bold)),
+                            Expanded(child: Text(rec.toString())),
+                          ],
                         ),
-                      )
-                    : (_aiAnalysisResult is Map<String, dynamic>
-                        ? Column(
-                            key: const ValueKey('result'),
-                            children: [
-                              if (_aiAnalysisResult!['error'] != null)
-                                _buildInfoCard(
-                                  title: "Error",
-                                  content: Text(
-                                    _aiAnalysisResult!['error'].toString(),
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
-                                )
-                              else ...[
-                                _buildInfoCard(
-                                  title: "Current Analysis",
-                                  content: Text(
-                                    _aiAnalysisResult!['analysis'] ?? 'No analysis available.',
-                                    style: const TextStyle(height: 1.4),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _buildInfoCard(
-                                  title: "Ecosystem Assessment",
-                                  content: Text(
-                                    _aiAnalysisResult!['assessment'] ?? 'No assessment available.',
-                                    style: const TextStyle(height: 1.4),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _buildInfoCard(
-                                  title: "Recommendations",
-                                  content: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: (_aiAnalysisResult!['recommendations'] as List<dynamic>)
-                                        .map((rec) => Padding(
-                                              padding: const EdgeInsets.only(bottom: 8.0),
-                                              child: Row(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  const Text("• ", style: TextStyle(fontWeight: FontWeight.bold)),
-                                                  Expanded(child: Text(rec.toString())),
-                                                ],
-                                              ),
-                                            ))
-                                        .toList(),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: TextButton.icon(
-                                      icon: const Icon(Icons.copy),
-                                      label: const Text('Copy Analysis'),
-                                      style: TextButton.styleFrom(
-                                        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                                      ),
-                                      onPressed: () {
-                                        safeLightHaptic();
-                                        Clipboard.setData(
-                                          ClipboardData(text: json.encode(_aiAnalysisResult)),
-                                        );
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Analysis copied to clipboard')),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          )
-                        : Center(
-                            key: const ValueKey('unexpected'),
-                            child: _buildInfoCard(
-                              title: "Unexpected AI Response",
-                              content: Text(
-                                  "The data from the AI was in an unexpected format. Please try again.\n\nDetails: ${_aiAnalysisResult.toString()}"),
-                            ),
-                          ))),
+                      ))
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copy Analysis'),
+                        style: TextButton.styleFrom(
+                          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        ),
+                        onPressed: () {
+                          safeLightHaptic();
+                          Clipboard.setData(
+                            ClipboardData(text: json.encode(_aiAnalysisResult)),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Analysis copied to clipboard')),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            )
+                : Center(
+              key: const ValueKey('unexpected'),
+              child: _buildInfoCard(
+                title: "Unexpected AI Response",
+                content: Text(
+                    "The data from the AI was in an unexpected format. Please try again.\n\nDetails: ${_aiAnalysisResult.toString()}"),
+              ),
+            ))),
           ),
 
           // Animate spacing before the button when result appears (AI finishes)
@@ -3613,11 +3908,11 @@ Uint8List? _decodeDataUrl(String url) {
 
 Image _buildImageWidget(String url, {BoxFit fit = BoxFit.cover}) {
   final frameBuilder = (
-    BuildContext context,
-    Widget child,
-    int? frame,
-    bool wasSynchronouslyLoaded,
-  ) {
+      BuildContext context,
+      Widget child,
+      int? frame,
+      bool wasSynchronouslyLoaded,
+      ) {
     if (wasSynchronouslyLoaded) return child;
     return AnimatedOpacity(
       opacity: frame == null ? 0 : 1,
@@ -3627,10 +3922,10 @@ Image _buildImageWidget(String url, {BoxFit fit = BoxFit.cover}) {
   };
 
   final errorBuilder = (
-    BuildContext context,
-    Object error,
-    StackTrace? stackTrace,
-  ) {
+      BuildContext context,
+      Object error,
+      StackTrace? stackTrace,
+      ) {
     return Container(
       color: Colors.black12,
       alignment: Alignment.center,
@@ -4130,21 +4425,21 @@ class _TotalDetectionsScreenState extends State<TotalDetectionsScreen> {
         padding: const EdgeInsets.only(top: 16.0),
         child: items.isNotEmpty
             ? PieChart(
-                dataMap: Map.fromEntries(items),
-                animationDuration: const Duration(milliseconds: 800),
-                chartLegendSpacing: 48,
-                legendOptions: const LegendOptions(showLegends: true),
-                chartValuesOptions: const ChartValuesOptions(showChartValuesInPercentage: true),
-              )
+          dataMap: Map.fromEntries(items),
+          animationDuration: const Duration(milliseconds: 800),
+          chartLegendSpacing: 48,
+          legendOptions: const LegendOptions(showLegends: true),
+          chartValuesOptions: const ChartValuesOptions(showChartValuesInPercentage: true),
+        )
             : Center(
-                child: Text(
-                  'No results match the current filters.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
+          child: Text(
+            'No results match the current filters.',
+            style: TextStyle(
+              fontSize: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
       );
     }
 
@@ -4273,7 +4568,7 @@ class _TotalDetectionsScreenState extends State<TotalDetectionsScreen> {
               onPressed: (index) {
                 safeSelectionHaptic();
                 setState(() => _mode =
-                    index == 0 ? _ChartMode.bar : _ChartMode.pie);
+                index == 0 ? _ChartMode.bar : _ChartMode.pie);
               },
               children: const [Icon(Icons.bar_chart), Icon(Icons.pie_chart)],
             ),
@@ -4394,7 +4689,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (val) async {
               safeLightHaptic();
               setState(() =>
-                  themeNotifier.value = val ? ThemeMode.dark : ThemeMode.light);
+              themeNotifier.value = val ? ThemeMode.dark : ThemeMode.light);
 
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('pref_dark_mode', val);
@@ -4487,19 +4782,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // QoL: AI model selector
           ListTile(
             title: const Text('Preferred AI model'),
-              subtitle: DropdownButton<String>(
-                value: _selectedAiModel,
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
-                  DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
-                  DropdownMenuItem(value: 'gpt-5.1', child: Text('GPT 5.1')),
-                  DropdownMenuItem(value: 'gpt-5.2', child: Text('GPT 5.2')),
-                ],
-                onChanged: (val) async {
-                  if (val == null) return;
-                  safeLightHaptic();
-                  setState(() => _selectedAiModel = val);
+            subtitle: DropdownButton<String>(
+              value: _selectedAiModel,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'gpt-4o-mini', child: Text('GPT-4o Mini')),
+                DropdownMenuItem(value: 'gpt-3.5-turbo', child: Text('GPT-3.5 Turbo')),
+                DropdownMenuItem(value: 'gpt-5.1', child: Text('GPT 5.1')),
+                DropdownMenuItem(value: 'gpt-5.2', child: Text('GPT 5.2')),
+              ],
+              onChanged: (val) async {
+                if (val == null) return;
+                safeLightHaptic();
+                setState(() => _selectedAiModel = val);
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString('pref_ai_model', val);
               },
@@ -4607,25 +4902,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Text(
-                              'Ornimetrics Device',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
+                            Text('About Ornimetrics', style: Theme.of(context).textTheme.titleLarge),
                             const SizedBox(height: 12),
                             const Text(
-                              'Ornimetrics Device helps you monitor wildlife detections in real time on your device, '
-                              'track species distribution, and receive AI-driven ecological insights.',
+                              'Monitor wildlife detections, track biodiversity, and receive AI guidance on feeder care and habitat safety.',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 12),
-                            Text(
-                              'Created by Baichen Yu',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Version 1.1.0',
-                              style: Theme.of(context).textTheme.bodyMedium,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: const [
+                                Text('Version 1.1.0 • Made by Baichen Yu'),
+                                SizedBox(height: 6),
+                                Text('Data sources: Realtime Database for detections and community posts, WeatherAPI for weather.'),
+                                SizedBox(height: 6),
+                                Text('Support: yu_thomas1226@outlook.com'),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             ElevatedButton(
@@ -4812,88 +5104,88 @@ class _SpeciesDetailSheetState extends State<_SpeciesDetailSheet> {
                 child: _loading
                     ? const SizedBox(height: 260, child: Center(child: CircularProgressIndicator()))
                     : (_items.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 32.0),
-                            child: Text('No recent photos for this species.'),
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                height: 260,
-                                child: PageView.builder(
-                                  controller: _pc,
-                                  padEnds: false,
-                                  itemCount: _items.length,
-                                  itemBuilder: (ctx, i) {
-                                    final p = _items[i];
-                                    return AnimatedBuilder(
-                                      animation: _pc,
-                                      builder: (ctx, child) {
-                                        double t = 0.0;
-                                        if (_pc.hasClients && _pc.position.haveDimensions) {
-                                          t = (_pc.page ?? _pc.initialPage.toDouble()) - i;
-                                        }
-                                        final scale = (1 - (t.abs() * 0.06)).clamp(0.92, 1.0);
-                                        final opacity = (1 - (t.abs() * 0.2)).clamp(0.5, 1.0);
-                                        return Center(
-                                          child: AnimatedOpacity(
-                                            duration: const Duration(milliseconds: 200),
-                                            opacity: opacity,
-                                            child: Transform.scale(
-                                              scale: scale,
-                                              child: ClipRRect(
-                                                borderRadius: BorderRadius.circular(14),
-                                                child: AspectRatio(
-                                                  aspectRatio: 4 / 3,
-                                                  child: _buildImageWidget(p.url, fit: BoxFit.cover),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              _CarouselDots(count: _items.length, controller: _pc),
-                              const SizedBox(height: 12),
-                              Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 250),
-                                    switchInCurve: Curves.easeIn,
-                                    switchOutCurve: Curves.easeOut,
-                                    child: _insightsLoading
-                                        ? Row(
-                                            key: const ValueKey('loading'),
-                                            children: const [
-                                              Icon(Icons.insights_outlined),
-                                              SizedBox(width: 8),
-                                              Expanded(child: Text('Generating insights…')),
-                                              SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              ),
-                                            ],
-                                          )
-                                        : Text(
-                                            _insights ?? 'No insights available.',
-                                            key: const ValueKey('ready'),
-                                            style: TextStyle(
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                              height: 1.35,
-                                            ),
-                                          ),
+                    ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32.0),
+                  child: Text('No recent photos for this species.'),
+                )
+                    : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 260,
+                      child: PageView.builder(
+                        controller: _pc,
+                        padEnds: false,
+                        itemCount: _items.length,
+                        itemBuilder: (ctx, i) {
+                          final p = _items[i];
+                          return AnimatedBuilder(
+                            animation: _pc,
+                            builder: (ctx, child) {
+                              double t = 0.0;
+                              if (_pc.hasClients && _pc.position.haveDimensions) {
+                                t = (_pc.page ?? _pc.initialPage.toDouble()) - i;
+                              }
+                              final scale = (1 - (t.abs() * 0.06)).clamp(0.92, 1.0);
+                              final opacity = (1 - (t.abs() * 0.2)).clamp(0.5, 1.0);
+                              return Center(
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 200),
+                                  opacity: opacity,
+                                  child: Transform.scale(
+                                    scale: scale,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(14),
+                                      child: AspectRatio(
+                                        aspectRatio: 4 / 3,
+                                        child: _buildImageWidget(p.url, fit: BoxFit.cover),
+                                      ),
+                                    ),
                                   ),
                                 ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _CarouselDots(count: _items.length, controller: _pc),
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          switchInCurve: Curves.easeIn,
+                          switchOutCurve: Curves.easeOut,
+                          child: _insightsLoading
+                              ? Row(
+                            key: const ValueKey('loading'),
+                            children: const [
+                              Icon(Icons.insights_outlined),
+                              SizedBox(width: 8),
+                              Expanded(child: Text('Generating insights…')),
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               ),
                             ],
-                          )),
+                          )
+                              : Text(
+                            _insights ?? 'No insights available.',
+                            key: const ValueKey('ready'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                )),
               ),
             ],
           ),
@@ -5023,223 +5315,223 @@ class _UniqueSpeciesScreenState extends State<UniqueSpeciesScreen> {
       body: _loading && entries.isNotEmpty
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                // Cover photo and intro
-                if (entries.isNotEmpty)
-                  TweenAnimationBuilder<double>(
-                    duration: const Duration(milliseconds: 600),
-                    tween: Tween(begin: 0, end: 1),
-                    builder: (_, v, child) => Opacity(
-                      opacity: v,
-                      child: Transform.scale(
-                        scale: 0.98 + 0.02 * v,
-                        child: child,
+        padding: EdgeInsets.zero,
+        children: [
+          // Cover photo and intro
+          if (entries.isNotEmpty)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 600),
+              tween: Tween(begin: 0, end: 1),
+              builder: (_, v, child) => Opacity(
+                opacity: v,
+                child: Transform.scale(
+                  scale: 0.98 + 0.02 * v,
+                  child: child,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  // Cover photo (first/highest species with image)
+                  if (_cover[entries.first.key]?.url != null)
+                    SizedBox(
+                      height: 180,
+                      width: double.infinity,
+                      child: _buildImageWidget(_cover[entries.first.key]!.url, fit: BoxFit.cover),
+                    )
+                  else
+                    Container(
+                      height: 180,
+                      width: double.infinity,
+                      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
+                      child: const Center(child: Icon(Icons.photo_outlined, size: 60)),
+                    ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      height: 64,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Color(0xAA000000),
+                            Color(0x00000000),
+                          ],
+                        ),
                       ),
                     ),
-                    child: Stack(
-                      children: [
-                        // Cover photo (first/highest species with image)
-                        if (_cover[entries.first.key]?.url != null)
-                          SizedBox(
-                            height: 180,
-                            width: double.infinity,
-                            child: _buildImageWidget(_cover[entries.first.key]!.url, fit: BoxFit.cover),
-                          )
-                        else
-                          Container(
-                            height: 180,
-                            width: double.infinity,
-                            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
-                            child: const Center(child: Icon(Icons.photo_outlined, size: 60)),
-                          ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            height: 64,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.bottomCenter,
-                                end: Alignment.topCenter,
-                                colors: [
-                                  Color(0xAA000000),
-                                  Color(0x00000000),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 16,
-                          bottom: 16,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: BackdropFilter(
-                              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.16),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white.withOpacity(0.28)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.pets, color: Colors.white, size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${entries.length} unique species',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-                  child: TweenAnimationBuilder<double>(
-                    duration: const Duration(milliseconds: 440),
-                    tween: Tween(begin: 0, end: 1),
-                    builder: (_, v, child) => Opacity(
-                      opacity: v,
-                      child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
-                    ),
+                  Positioned(
+                    left: 16,
+                    bottom: 16,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       child: BackdropFilter(
                         filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                         child: Container(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: (Theme.of(context).brightness == Brightness.dark)
-                                ? Colors.black.withOpacity(0.24)
-                                : Colors.white.withOpacity(0.35),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.white.withOpacity(0.24)),
+                            color: Colors.white.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withOpacity(0.28)),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
+                              const Icon(Icons.pets, color: Colors.white, size: 18),
+                              const SizedBox(width: 8),
                               Text(
-                                'Unique Species Detected',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'These are the distinct animal species automatically detected by your Ornimetrics device. Tap any species for recent photos and more details.',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Colors.white.withOpacity(0.9),
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              if (total > 0)
-                                Text(
-                                  'Total detections: $total',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Colors.white.withOpacity(0.9),
-                                      ),
+                                '${entries.length} unique species',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: Colors.white,
                                 ),
+                              ),
                             ],
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const Divider(),
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemCount: entries.length,
-                  itemBuilder: (_, i) {
-                    final e = entries[i];
-                    final cover = _cover[e.key];
-                    final percent = total > 0 ? ((e.value / total) * 100).toStringAsFixed(0) : '0';
-                    return TweenAnimationBuilder<double>(
-                      duration: Duration(milliseconds: 240 + i * 28),
-                      tween: Tween(begin: 0, end: 1),
-                      builder: (_, v, child) => Opacity(
-                        opacity: v,
-                        child: Transform.translate(offset: Offset(0, (1 - v) * 8), child: child),
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          safeLightHaptic();
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Theme.of(context).colorScheme.surface,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 440),
+              tween: Tween(begin: 0, end: 1),
+              builder: (_, v, child) => Opacity(
+                opacity: v,
+                child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: (Theme.of(context).brightness == Brightness.dark)
+                          ? Colors.black.withOpacity(0.24)
+                          : Colors.white.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white.withOpacity(0.24)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Unique Species Detected',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'These are the distinct animal species automatically detected by your Ornimetrics device. Tap any species for recent photos and more details.',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (total > 0)
+                          Text(
+                            'Total detections: $total',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withOpacity(0.9),
                             ),
-                            builder: (_) => _SpeciesDetailSheet(speciesKey: e.key),
-                          );
-                        },
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Row(
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Divider(),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemCount: entries.length,
+            itemBuilder: (_, i) {
+              final e = entries[i];
+              final cover = _cover[e.key];
+              final percent = total > 0 ? ((e.value / total) * 100).toStringAsFixed(0) : '0';
+              return TweenAnimationBuilder<double>(
+                duration: Duration(milliseconds: 240 + i * 28),
+                tween: Tween(begin: 0, end: 1),
+                builder: (_, v, child) => Opacity(
+                  opacity: v,
+                  child: Transform.translate(offset: Offset(0, (1 - v) * 8), child: child),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    safeLightHaptic();
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                      ),
+                      builder: (_) => _SpeciesDetailSheet(speciesKey: e.key),
+                    );
+                  },
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: SizedBox(
+                              width: 110,
+                              height: 82,
+                              child: cover != null
+                                  ? _buildImageWidget(cover.url, fit: BoxFit.cover)
+                                  : Container(
+                                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                                child: const Center(child: Icon(Icons.photo_outlined)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: SizedBox(
-                                    width: 110,
-                                    height: 82,
-                                    child: cover != null
-                                        ? _buildImageWidget(cover.url, fit: BoxFit.cover)
-                                        : Container(
-                                            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                                            child: const Center(child: Icon(Icons.photo_outlined)),
-                                          ),
-                                  ),
+                                Text(
+                                  _format(e.key),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _format(e.key),
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        'Detected ${e.value.toInt()} times ($percent%). Tap to view recent photos and details.',
-                                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                      ),
-                                    ],
-                                  ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Detected ${e.value.toInt()} times ($percent%). Tap to view recent photos and details.',
+                                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ],
-            ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }

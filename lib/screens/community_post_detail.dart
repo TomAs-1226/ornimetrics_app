@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart';
 
 import '../models/community_models.dart';
@@ -14,8 +15,9 @@ class CommunityPostDetail extends StatefulWidget {
 }
 
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
-  late final AiProvider _ai = RealAiProvider(model: widget.aiModel);
-  final List<AiMessage> _messages = [AiMessage('ai', 'Ask me about this sighting. I consider weather + feeder state.')];
+  late final AiProvider _ai =
+  RealAiProvider(model: widget.aiModel, apiKey: dotenv.env['OPENAI_API_KEY']);
+  final List<AiMessage> _messages = [AiMessage('assistant', 'Ask me about this sighting. I consider weather + feeder state.')];
   final _controller = TextEditingController();
   bool _sending = false;
 

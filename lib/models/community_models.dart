@@ -10,17 +10,18 @@ class SensorSnapshot {
   const SensorSnapshot({this.lowFood = false, this.clogged = false, this.cleaningDue = false});
 
   Map<String, dynamic> toMap() => {
-        'lowFood': lowFood,
-        'clogged': clogged,
-        'cleaningDue': cleaningDue,
-      };
+    'lowFood': lowFood,
+    'clogged': clogged,
+    'cleaningDue': cleaningDue,
+  };
 
-  factory SensorSnapshot.fromMap(Map<String, dynamic>? map) {
+  factory SensorSnapshot.fromMap(Map<dynamic, dynamic>? map) {
     if (map == null) return const SensorSnapshot();
+    final normalized = Map<String, dynamic>.from(map.map((k, v) => MapEntry(k.toString(), v)));
     return SensorSnapshot(
-      lowFood: map['lowFood'] == true,
-      clogged: map['clogged'] == true,
-      cleaningDue: map['cleaningDue'] == true,
+      lowFood: normalized['lowFood'] == true,
+      clogged: normalized['clogged'] == true,
+      cleaningDue: normalized['cleaningDue'] == true,
     );
   }
 }
@@ -49,7 +50,14 @@ class CommunityPost {
   });
 
   factory CommunityPost.fromRealtime(String id, Map data) {
-    final normalized = Map<String, dynamic>.from(data);
+    final normalized = <String, dynamic>{};
+    data.forEach((k, v) => normalized[k.toString()] = v);
+    final weatherMap = normalized['weather'] is Map
+        ? Map<String, dynamic>.from((normalized['weather'] as Map).map((k, v) => MapEntry(k.toString(), v)))
+        : null;
+    final sensorsMap = normalized['sensors'] is Map
+        ? Map<String, dynamic>.from((normalized['sensors'] as Map).map((k, v) => MapEntry(k.toString(), v)))
+        : null;
     return CommunityPost(
       id: id,
       author: normalized['author']?.toString() ?? 'anon',
@@ -58,57 +66,57 @@ class CommunityPost {
       createdAt: _parseTimestamp(normalized['created_at']),
       timeOfDayTag: normalized['time_of_day']?.toString() ?? 'daytime',
       model: normalized['model']?.toString() ?? 'Ornimetrics O1 feeder',
-      weather: normalized['weather'] is Map
+      weather: weatherMap != null
           ? WeatherSnapshot(
-              condition: normalized['weather']['condition']?.toString() ?? 'Unknown',
-              temperatureC: (normalized['weather']['temperatureC'] as num?)?.toDouble() ?? 0,
-              humidity: (normalized['weather']['humidity'] as num?)?.toDouble() ?? 0,
-              precipitationChance: (normalized['weather']['precipitationChance'] as num?)?.toDouble(),
-              windKph: (normalized['weather']['windKph'] as num?)?.toDouble(),
-              pressureMb: (normalized['weather']['pressureMb'] as num?)?.toDouble(),
-              uvIndex: (normalized['weather']['uvIndex'] as num?)?.toDouble(),
-              visibilityKm: (normalized['weather']['visibilityKm'] as num?)?.toDouble(),
-              dewPointC: (normalized['weather']['dewPointC'] as num?)?.toDouble(),
-              fetchedAt: DateTime.tryParse(normalized['weather']['fetchedAt']?.toString() ?? '') ?? DateTime.now(),
-              isRaining: normalized['weather']['isRaining'] == true,
-              isSnowing: normalized['weather']['isSnowing'] == true,
-              isHailing: normalized['weather']['isHailing'] == true,
-              feelsLikeC: (normalized['weather']['feelsLikeC'] as num?)?.toDouble(),
-              precipitationMm: (normalized['weather']['precipitationMm'] as num?)?.toDouble(),
-            )
+        condition: weatherMap['condition']?.toString() ?? 'Unknown',
+        temperatureC: (weatherMap['temperatureC'] as num?)?.toDouble() ?? 0,
+        humidity: (weatherMap['humidity'] as num?)?.toDouble() ?? 0,
+        precipitationChance: (weatherMap['precipitationChance'] as num?)?.toDouble(),
+        windKph: (weatherMap['windKph'] as num?)?.toDouble(),
+        pressureMb: (weatherMap['pressureMb'] as num?)?.toDouble(),
+        uvIndex: (weatherMap['uvIndex'] as num?)?.toDouble(),
+        visibilityKm: (weatherMap['visibilityKm'] as num?)?.toDouble(),
+        dewPointC: (weatherMap['dewPointC'] as num?)?.toDouble(),
+        fetchedAt: DateTime.tryParse(weatherMap['fetchedAt']?.toString() ?? '') ?? DateTime.now(),
+        isRaining: weatherMap['isRaining'] == true,
+        isSnowing: weatherMap['isSnowing'] == true,
+        isHailing: weatherMap['isHailing'] == true,
+        feelsLikeC: (weatherMap['feelsLikeC'] as num?)?.toDouble(),
+        precipitationMm: (weatherMap['precipitationMm'] as num?)?.toDouble(),
+      )
           : null,
-      sensors: SensorSnapshot.fromMap(normalized['sensors'] as Map<String, dynamic>?),
+      sensors: SensorSnapshot.fromMap(sensorsMap),
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'author': author,
-        'caption': caption,
-        'image_url': imageUrl,
-        'created_at': ServerValue.timestamp,
-        'time_of_day': timeOfDayTag,
-        'model': model,
-        'weather': weather != null
-            ? {
-                'condition': weather!.condition,
-                'temperatureC': weather!.temperatureC,
-                'humidity': weather!.humidity,
-                'precipitationChance': weather!.precipitationChance,
-                'windKph': weather!.windKph,
-                'pressureMb': weather!.pressureMb,
-                'uvIndex': weather!.uvIndex,
-                'visibilityKm': weather!.visibilityKm,
-                'dewPointC': weather!.dewPointC,
-                'fetchedAt': weather!.fetchedAt.toIso8601String(),
-                'isRaining': weather!.isRaining,
-                'isSnowing': weather!.isSnowing,
-                'isHailing': weather!.isHailing,
-                'feelsLikeC': weather!.feelsLikeC,
-                'precipitationMm': weather!.precipitationMm,
-              }
-            : null,
-        'sensors': sensors.toMap(),
-      };
+    'author': author,
+    'caption': caption,
+    'image_url': imageUrl,
+    'created_at': ServerValue.timestamp,
+    'time_of_day': timeOfDayTag,
+    'model': model,
+    'weather': weather != null
+        ? {
+      'condition': weather!.condition,
+      'temperatureC': weather!.temperatureC,
+      'humidity': weather!.humidity,
+      'precipitationChance': weather!.precipitationChance,
+      'windKph': weather!.windKph,
+      'pressureMb': weather!.pressureMb,
+      'uvIndex': weather!.uvIndex,
+      'visibilityKm': weather!.visibilityKm,
+      'dewPointC': weather!.dewPointC,
+      'fetchedAt': weather!.fetchedAt.toIso8601String(),
+      'isRaining': weather!.isRaining,
+      'isSnowing': weather!.isSnowing,
+      'isHailing': weather!.isHailing,
+      'feelsLikeC': weather!.feelsLikeC,
+      'precipitationMm': weather!.precipitationMm,
+    }
+        : null,
+    'sensors': sensors.toMap(),
+  };
 }
 
 DateTime _parseTimestamp(dynamic v) {
