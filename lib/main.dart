@@ -588,6 +588,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     autoRefreshIntervalNotifier.addListener(_updateAutoRefresh);
     _updateAutoRefresh(); // Initialize based on current settings
     _loadMaintenanceStatus();
+    _maybePromptNotifications();
     _loadAiPrefs();
     _loadTasks();
     _captureLocation(); // Do not block initial renders on location.
@@ -597,6 +598,35 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       await _loadTrendSummaries();
     }));
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
+  }
+
+  Future<void> _maybePromptNotifications() async {
+    final service = NotificationsService.instance;
+    if (service.permissionsPrompted.value) return;
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enable live notifications'),
+        content: const Text(
+            'Turn on feeder alerts and live activity updates. You can change this anytime in settings.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await NotificationsService.instance.requestPermissions();
+            },
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
 
@@ -1402,7 +1432,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                             )
                           : const SizedBox.shrink(key: ValueKey('maint-banner-empty')),
                     ),
-                    _buildNotificationCard(),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: NotificationsService.instance.permissionsPrompted,
+                      builder: (_, prompted, __) {
+                        if (prompted) return const SizedBox.shrink();
+                        return _buildNotificationCard();
+                      },
+                    ),
                     const SizedBox(height: 16),
                     _buildSummaryCards(),
                     const SizedBox(height: 24),
@@ -4865,25 +4901,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Text(
-                              'Ornimetrics Device',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
+                            Text('About Ornimetrics', style: Theme.of(context).textTheme.titleLarge),
                             const SizedBox(height: 12),
                             const Text(
-                              'Ornimetrics Device helps you monitor wildlife detections in real time on your device, '
-                              'track species distribution, and receive AI-driven ecological insights.',
+                              'Monitor wildlife detections, track biodiversity, and receive AI guidance on feeder care and habitat safety.',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 12),
-                            Text(
-                              'Created by Baichen Yu',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Version 1.1.0',
-                              style: Theme.of(context).textTheme.bodyMedium,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: const [
+                                Text('Version 1.1.0 • Made by Baichen Yu'),
+                                SizedBox(height: 6),
+                                Text('Data sources: Realtime Database for detections and community posts, WeatherAPI for weather.'),
+                                SizedBox(height: 6),
+                                Text('Support: yu_thomas1226@outlook.com'),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             ElevatedButton(

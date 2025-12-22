@@ -35,7 +35,7 @@ class CommunityCenterScreen extends StatefulWidget {
   State<CommunityCenterScreen> createState() => _CommunityCenterScreenState();
 }
 
-class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
+class _CommunityCenterScreenState extends State<CommunityCenterScreen> with WidgetsBindingObserver {
   static const List<Map<String, String>> _aiModels = [
     {'value': 'gpt-4o-mini', 'label': 'GPT-4o Mini'},
     {'value': 'gpt-4o', 'label': 'GPT-4o'},
@@ -64,21 +64,33 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   bool _showAdvancedTrends = false;
   int _postLimit = 50;
   String _searchQuery = '';
+  bool _locked = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPrefs();
     _postsStream = _service.watchCommunityPosts(limit: _postLimit);
     _refreshWeather();
     _initBiometricSupport();
+    _reauthenticate();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _captionController.dispose();
     _listController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      setState(() => _locked = true);
+      _reauthenticate();
+    }
   }
 
   Future<void> _loadPrefs() async {
@@ -151,6 +163,11 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     } catch (_) {
       return !requireEnrollment;
     }
+  }
+
+  Future<void> _reauthenticate() async {
+    final ok = await _authenticateBiometricIfAvailable(requireEnrollment: true);
+    if (mounted) setState(() => _locked = !ok);
   }
 
   Future<void> _refreshWeather() async {
@@ -355,6 +372,28 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_locked) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Community')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock_outline, size: 48),
+              const SizedBox(height: 12),
+              const Text('Unlock with biometrics to access the community'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _reauthenticate,
+                icon: const Icon(Icons.fingerprint),
+                label: const Text('Unlock'),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     return RefreshIndicator(
       onRefresh: () async {

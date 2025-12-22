@@ -23,6 +23,7 @@ class NotificationsService {
   final ValueNotifier<List<NotificationEvent>> events =
       ValueNotifier<List<NotificationEvent>>(<NotificationEvent>[]);
   final ValueNotifier<FoodLevelReading?> foodLevel = ValueNotifier<FoodLevelReading?>(null);
+  final ValueNotifier<bool> permissionsPrompted = ValueNotifier<bool>(false);
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _pluginReady = false;
@@ -36,8 +37,8 @@ class NotificationsService {
 
   Future<void> load() async {
     await _ensurePlugin();
-    await requestPermissions();
     final prefs = await SharedPreferences.getInstance();
+    permissionsPrompted.value = prefs.getBool('pref_notifications_prompted') ?? false;
     final interval = prefs.getInt('pref_cleaning_interval') ?? 7;
     final weatherSensIdx = prefs.getInt('pref_weather_sensitivity') ?? 0;
     final usageSensIdx = prefs.getInt('pref_usage_sensitivity') ?? 1;
@@ -129,6 +130,9 @@ class NotificationsService {
           _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
       await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
     }
+    final prefs = await SharedPreferences.getInstance();
+    permissionsPrompted.value = true;
+    await prefs.setBool('pref_notifications_prompted', true);
   }
 
   /// Simulate a "low food" notification; real sensor hooks can call this later.
