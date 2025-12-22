@@ -48,7 +48,7 @@ class RealAiProvider implements AiProvider {
     String? modelOverride,
   }) async {
     try {
-      final uri = Uri.parse(endpoint ?? _openAiChatEndpoint);
+      final uri = Uri.parse(endpoint ?? _openAiResponsesEndpoint);
       final chosenModel = modelOverride ?? model ?? _defaultModel;
       final key = apiKey ?? dotenv.env['OPENAI_API_KEY'];
 
@@ -56,9 +56,18 @@ class RealAiProvider implements AiProvider {
         return AiMessage('ai', 'AI key missing. Please set OPENAI_API_KEY in your .env file.');
       }
 
+      final inputMessages = history
+          .map((m) => {
+                'role': m.role,
+                'content': [
+                  {'type': 'text', 'text': m.content}
+                ]
+              })
+          .toList();
+
       final payload = {
         'model': chosenModel,
-        'messages': history.map((m) => {'role': m.role, 'content': m.content}).toList(),
+        'input': inputMessages,
         if (context != null && context.isNotEmpty) 'metadata': context,
       };
 
@@ -73,13 +82,19 @@ class RealAiProvider implements AiProvider {
 
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final reply = (json['choices']?[0]?['message']?['content'] ??
-                json['reply'] ??
-                json['content'] ??
-                json['message'] ??
-                'AI response unavailable')
-            .toString();
-        return AiMessage('ai', reply);
+        final output = json['output'] as List?;
+        if (output != null && output.isNotEmpty) {
+          final first = output.first;
+          final content = (first is Map && first['content'] is List && (first['content'] as List).isNotEmpty)
+              ? ((first['content'] as List).first['text'] ?? first['content'].first.toString()).toString()
+              : first.toString();
+          return AiMessage('ai', content);
+        }
+        final text = json['content']?.toString() ??
+            json['message']?.toString() ??
+            json['output_text']?.toString() ??
+            'AI response unavailable';
+        return AiMessage('ai', text);
       }
 
       // Graceful fallback to keep the chat usable if the endpoint is unreachable.
@@ -105,5 +120,5 @@ class RealAiProvider implements AiProvider {
   }
 }
 
-const String _openAiChatEndpoint = 'https://api.openai.com/v1/chat/completions';
+const String _openAiResponsesEndpoint = 'https://api.openai.com/v1/responses';
 const String _defaultModel = 'gpt-4o';

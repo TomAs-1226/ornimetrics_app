@@ -724,13 +724,14 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   Widget _buildPostTile(CommunityPost p) {
     final theme = Theme.of(context);
+    final sv = theme.colorScheme.surfaceVariant;
     final colors = [
-      theme.colorScheme.primaryContainer,
-      theme.colorScheme.secondaryContainer,
-      theme.colorScheme.tertiaryContainer,
-      Colors.teal.shade100,
-      Colors.amber.shade100,
-      Colors.blue.shade100,
+      sv,
+      Color.alphaBlend(theme.colorScheme.primaryContainer.withOpacity(0.18), sv),
+      Color.alphaBlend(theme.colorScheme.secondaryContainer.withOpacity(0.18), sv),
+      Color.alphaBlend(theme.colorScheme.tertiaryContainer.withOpacity(0.18), sv),
+      Color.alphaBlend(Colors.teal.shade200.withOpacity(0.12), sv),
+      Color.alphaBlend(Colors.blueGrey.shade200.withOpacity(0.12), sv),
     ];
     final bg = colors[p.id.hashCode.abs() % colors.length];
     final brightness = ThemeData.estimateBrightnessForColor(bg);
