@@ -63,6 +63,13 @@ class CommunityService {
     DataSnapshot snap;
     try {
       snap = await _ref.orderByChild('created_at').limitToLast(50).get();
+    } on FirebaseException catch (e) {
+      // If index is missing, fall back to unordered fetch to avoid empty UI.
+      if (e.message != null && e.message!.contains('indexOn')) {
+        snap = await _ref.get();
+      } else {
+        rethrow;
+      }
     } catch (_) {
       snap = await _ref.get();
     }
