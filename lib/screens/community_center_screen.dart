@@ -63,6 +63,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
   bool _tagCleaningDue = false;
   bool _showAdvancedTrends = false;
   int _postLimit = 50;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -114,6 +115,16 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
     setState(() {
       _postsStream = _service.watchCommunityPosts(limit: _postLimit);
     });
+  }
+
+  List<CommunityPost> _filterPosts(List<CommunityPost> posts) {
+    if (_searchQuery.isEmpty) return posts;
+    final q = _searchQuery.toLowerCase();
+    return posts.where((p) {
+      return p.author.toLowerCase().contains(q) ||
+          p.caption.toLowerCase().contains(q) ||
+          p.model.toLowerCase().contains(q);
+    }).toList();
   }
 
   bool _isValidEmail(String value) {
@@ -362,6 +373,8 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
               const SizedBox(height: 12),
               _composer(),
               const SizedBox(height: 16),
+              _buildSearchBar(),
+              const SizedBox(height: 8),
               Row(
                 children: const [
                   Icon(Icons.forum_outlined),
@@ -399,10 +412,11 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                       ),
                     );
                   }
+                  final filtered = _filterPosts(posts);
                   return Column(
                     children: [
                       Column(
-                        children: posts
+                        children: filtered
                             .map(
                               (p) => AnimatedSize(
                                 duration: const Duration(milliseconds: 180),
@@ -443,6 +457,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return TextField(
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search),
+        hintText: 'Search posts (author or caption)',
+        border: OutlineInputBorder(),
+      ),
+      onChanged: (val) => setState(() => _searchQuery = val.trim()),
     );
   }
 
@@ -708,6 +733,9 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
       Colors.blue.shade100,
     ];
     final bg = colors[p.id.hashCode.abs() % colors.length];
+    final brightness = ThemeData.estimateBrightnessForColor(bg);
+    final fg = brightness == Brightness.dark ? Colors.white : Colors.black87;
+    final subtle = brightness == Brightness.dark ? Colors.white70 : Colors.black54;
     return Hero(
       tag: p.id,
       child: Card(
@@ -724,17 +752,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Text(p.author.isNotEmpty ? p.author[0].toUpperCase() : '?'),
+                      backgroundColor: fg.withOpacity(0.12),
+                      child: Text(p.author.isNotEmpty ? p.author[0].toUpperCase() : '?', style: TextStyle(color: fg)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(p.author, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          Text(p.author, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
                           Text(DateFormat('MMM d, hh:mm a').format(p.createdAt.toLocal()),
-                              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
+                              style: TextStyle(color: subtle, fontSize: 12)),
                         ],
                       ),
                     ),
@@ -743,7 +771,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
                 const SizedBox(height: 10),
                 Text(
                   p.caption.isNotEmpty ? p.caption : '(No caption)',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: fg),
                 ),
                 if (p.imageUrl != null) ...[
                   const SizedBox(height: 10),
