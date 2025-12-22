@@ -73,8 +73,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> with Widg
     _loadPrefs();
     _postsStream = _service.watchCommunityPosts(limit: _postLimit);
     _refreshWeather();
-    _initBiometricSupport();
-    _reauthenticate();
+    _initBiometricSupport().then((_) => _reauthenticate());
   }
 
   @override
@@ -89,7 +88,7 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> with Widg
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       setState(() => _locked = true);
-      _reauthenticate();
+      _initBiometricSupport().then((_) => _reauthenticate());
     }
   }
 
@@ -157,7 +156,11 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> with Widg
     try {
       final didAuth = await _localAuth.authenticate(
         localizedReason: 'Confirm it’s you before posting to the community.',
-        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: false),
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: false,
+          useErrorDialogs: true,
+        ),
       );
       return didAuth;
     } catch (_) {
