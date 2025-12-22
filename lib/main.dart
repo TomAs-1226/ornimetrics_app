@@ -545,6 +545,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     busiestDayKey: null,
     busiestDayTotal: 0,
   );
+  String? _weatherTrendNote;
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -852,6 +853,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   void _rebuildTrendSignals() {
     final fromDaily = _trendSignalsFromDailyCounts(_recentDailyCounts);
     final fallback = _deriveTrendsFromPhotos(_photos);
+    _weatherTrendNote = _buildWeatherTrendNote(_photos);
     if (!mounted) return;
     setState(() {
       _trendSignals = fromDaily.isNotEmpty ? fromDaily : fallback;
@@ -880,6 +882,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       setState(() {
         _recentDailyCounts = daily;
         _trendRollup = _buildTrendRollup(daily);
+        _weatherTrendNote = _buildWeatherTrendNote(_photos);
       });
       _rebuildTrendSignals();
     } catch (e) {
@@ -1141,6 +1144,51 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         .toList();
   }
 
+  String? _buildWeatherTrendNote(List<DetectionPhoto> photos) {
+    final now = DateTime.now().toUtc();
+    final cutoff = now.subtract(const Duration(days: 7));
+    final tagged = photos.where((p) => p.timestamp.toUtc().isAfter(cutoff) && p.weatherAtCapture != null);
+    if (tagged.isEmpty) return null;
+
+    int wet = 0;
+    int dry = 0;
+    double tempSum = 0;
+    double humiditySum = 0;
+    int tempCount = 0;
+    final Map<String, int> skyCounts = {};
+
+    for (final p in tagged) {
+      final w = p.weatherAtCapture!;
+      final isWet = w.isRaining || w.isSnowing || w.isHailing || (w.precipitationMm ?? 0) > 0;
+      if (isWet) {
+        wet++;
+      } else {
+        dry++;
+      }
+      if (w.temperatureC != null) {
+        tempSum += w.temperatureC!;
+        tempCount++;
+      }
+      humiditySum += (w.humidity ?? 0);
+      final skyKey = (w.condition.isNotEmpty ? w.condition : 'Unknown').toLowerCase();
+      skyCounts[skyKey] = (skyCounts[skyKey] ?? 0) + 1;
+    }
+
+    final topSky = skyCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final skyLabel = topSky.isNotEmpty ? topSky.first.key : 'n/a';
+    final avgTemp = tempCount == 0 ? null : tempSum / tempCount;
+    final avgHumidity = tagged.isEmpty ? null : humiditySum / tagged.length;
+
+    final parts = <String>[];
+    parts.add('Weather-tagged captures: ${tagged.length}');
+    parts.add('Wet vs dry: $wet / $dry');
+    if (avgTemp != null) parts.add('Avg temp ${avgTemp.toStringAsFixed(1)}°C');
+    if (avgHumidity != null) parts.add('Avg humidity ${avgHumidity.toStringAsFixed(0)}%');
+    parts.add('Common sky: $skyLabel');
+    return parts.join(' • ');
+  }
+
   Future<void> _generateTrendAiInsight() async {
     if (_trendSignals.isEmpty) return;
     setState(() {
@@ -1159,6 +1207,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final topSpecies = _speciesDataMap.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final topText = topSpecies.take(5).map((e) => '${_formatSpeciesName(e.key)}:${e.value.toInt()}').join(', ');
+    final weatherNote = _weatherTrendNote;
 
     final messages = <AiMessage>[
       AiMessage('system',
@@ -1172,6 +1221,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           if (topText.isNotEmpty) 'Top species totals: $topText.',
           if (_lastUpdated != null)
             'Latest data refresh: ${DateFormat('yyyy-MM-dd HH:mm').format(_lastUpdated!)}.',
+          if (weatherNote != null) 'Weather correlation: $weatherNote.',
         ].join(' '),
       ),
     ];
@@ -1183,6 +1233,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         'rollup_prior_7d': rollup.priorTotal,
         'busiest_day': rollup.busiestDayKey ?? 'n/a',
         'top_species': topText,
+        if (weatherNote != null) 'weather_note': weatherNote,
       });
       if (!mounted) return;
       setState(() {
@@ -3468,7 +3519,6 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget _buildTrendsCard() {
     return LayoutBuilder(builder: (context, constraints) {
       final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
-      final isNarrow = constraints.maxWidth < 420;
       String _humanDay(String key) {
         try {
           final dt = DateTime.parse(key);
@@ -3482,6 +3532,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         spacing: 6,
         runSpacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.end,
         children: [
           IconButton(
             icon: Icon(_trendsCollapsed ? Icons.unfold_more : Icons.unfold_less),
@@ -3543,31 +3594,26 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                 ),
                 const SizedBox(height: 10),
               ],
-              if (isNarrow)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Migration & activity trends',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    actionRow,
-                  ],
-                )
-              else
+              const Text('Migration & activity trends',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Align(alignment: Alignment.centerRight, child: actionRow),
+              const SizedBox(height: 8),
+              if (_weatherTrendNote != null) ...[
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
+                    Icon(Icons.cloudy_snowing, size: 18, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
                       child: Text(
-                        'Migration & activity trends',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        _weatherTrendNote!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Flexible(child: actionRow),
                   ],
                 ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 10),
+              ],
               if (changing.isEmpty)
                 Text(
                   'Need more data to spot trends. Add snapshots with species labels over several days.',
