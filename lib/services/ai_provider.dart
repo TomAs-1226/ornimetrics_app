@@ -53,7 +53,7 @@ class RealAiProvider implements AiProvider {
       final key = apiKey ?? dotenv.env['OPENAI_API_KEY'];
 
       if (key == null || key.isEmpty) {
-        return AiMessage('ai', 'AI key missing. Please set OPENAI_API_KEY.');
+        return AiMessage('ai', 'AI key missing. Please set OPENAI_API_KEY in your .env file.');
       }
 
       final payload = {
@@ -83,10 +83,17 @@ class RealAiProvider implements AiProvider {
       }
 
       // Graceful fallback to keep the chat usable if the endpoint is unreachable.
+      String message = 'AI service unavailable (status ${resp.statusCode}).';
+      try {
+        final errJson = jsonDecode(resp.body);
+        final errMsg = errJson['error']?['message']?.toString();
+        if (errMsg != null && errMsg.isNotEmpty) {
+          message = '$message $errMsg';
+        }
+      } catch (_) {}
       return AiMessage(
         'ai',
-        'AI service temporarily unavailable (status ${resp.statusCode}). Using cached guidance: '
-            'Consider weather ${context?['weather'] ?? 'n/a'} and sensors ${context?['sensors'] ?? 'n/a'} before changing feeder behavior.',
+        '$message Ensure OPENAI_API_KEY is set in .env and the model name is valid.',
       );
     } catch (e) {
       return AiMessage(
@@ -99,4 +106,4 @@ class RealAiProvider implements AiProvider {
 }
 
 const String _openAiChatEndpoint = 'https://api.openai.com/v1/chat/completions';
-const String _defaultModel = 'gpt-4o-mini';
+const String _defaultModel = 'gpt-4o';

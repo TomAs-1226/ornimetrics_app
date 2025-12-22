@@ -699,11 +699,21 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen> {
 
   Widget _buildPostTile(CommunityPost p) {
     final theme = Theme.of(context);
+    final colors = [
+      theme.colorScheme.primaryContainer,
+      theme.colorScheme.secondaryContainer,
+      theme.colorScheme.tertiaryContainer,
+      Colors.teal.shade100,
+      Colors.amber.shade100,
+      Colors.blue.shade100,
+    ];
+    final bg = colors[p.id.hashCode.abs() % colors.length];
     return Hero(
       tag: p.id,
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: bg,
         child: InkWell(
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CommunityPostDetail(post: p))),
           child: Padding(
