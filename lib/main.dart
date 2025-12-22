@@ -586,11 +586,12 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadMaintenanceStatus();
     _loadAiPrefs();
     _loadTasks();
-    _captureLocation().then((_) async {
+    _captureLocation(); // Do not block initial renders on location.
+    unawaited(Future(() async {
       await _fetchTodaySummaryFlexible();
       await _fetchPhotoSnapshots();
       await _loadTrendSummaries();
-    });
+    }));
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
   String _uuid() => DateTime.now().microsecondsSinceEpoch.toString() + '_' + (math.Random().nextInt(1<<32)).toString();
@@ -845,7 +846,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _refreshAll() async {
-    await _captureLocation();
+    _captureLocation();
     await Future.wait([
       _fetchPhotoSnapshots(),
       _fetchTodaySummaryFlexible(),
