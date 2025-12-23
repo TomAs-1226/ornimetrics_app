@@ -89,8 +89,19 @@ struct DashboardView: View {
 
     private var detectionSummary: some View {
         HStack(spacing: 16) {
-            StatCard(title: "Total Detections", value: "\(appState.totalDetections)", systemImage: "track_changes")
-            StatCard(title: "Unique Species", value: "\(appState.speciesCounts.keys.count)", systemImage: "pawprint")
+            NavigationLink {
+                TotalDetectionsView(total: appState.totalDetections)
+            } label: {
+                StatCard(title: "Total Detections", value: "\(appState.totalDetections)", systemImage: "track_changes")
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                SpeciesView()
+            } label: {
+                StatCard(title: "Unique Species", value: "\(appState.speciesCounts.keys.count)", systemImage: "pawprint")
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -108,6 +119,11 @@ struct DashboardView: View {
             } else {
                 SpeciesBreakdownList(speciesCounts: appState.speciesCounts, totalDetections: appState.totalDetections)
             }
+
+            NavigationLink("Open full gallery") {
+                GalleryView()
+            }
+            .buttonStyle(.bordered)
         }
     }
 
@@ -124,7 +140,7 @@ struct DashboardView: View {
 
     private var detectedSpecies: some View {
         GlassCard(title: "Detected Species", subtitle: "Recent counts") {
-            SpeciesBreakdownList(speciesCounts: appState.speciesCounts, totalDetections: appState.totalDetections)
+            SpeciesBreakdownList(speciesCounts: appState.speciesCounts, totalDetections: appState.totalDetections, showNavigation: true)
         }
     }
 }
@@ -218,9 +234,10 @@ private struct DetectionPhotoCell: View {
     }
 }
 
-private struct SpeciesBreakdownList: View {
+struct SpeciesBreakdownList: View {
     let speciesCounts: [String: Int]
     let totalDetections: Int
+    var showNavigation: Bool = false
 
     var body: some View {
         let sorted = speciesCounts.sorted { $0.value > $1.value }
@@ -231,28 +248,45 @@ private struct SpeciesBreakdownList: View {
             VStack(spacing: 12) {
                 ForEach(sorted, id: \.key) { species, count in
                     let percent = totalDetections > 0 ? (Double(count) / Double(totalDetections)) : 0
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(species.replacingOccurrences(of: "_", with: " "))
-                                .font(.subheadline.bold())
-                            Text("\(count) detections")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    Group {
+                        if showNavigation {
+                            NavigationLink {
+                                SpeciesDetailView(species: species, count: count, total: totalDetections)
+                            } label: {
+                                speciesRow(species: species, count: count, percent: percent)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            speciesRow(species: species, count: count, percent: percent)
                         }
-                        Spacer()
-                        Text("\(Int(percent * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    ProgressView(value: percent)
-                        .tint(.mint)
                 }
             }
         }
     }
+
+    private func speciesRow(species: String, count: Int, percent: Double) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(species.replacingOccurrences(of: "_", with: " "))
+                        .font(.subheadline.bold())
+                    Text("\(count) detections")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(Int(percent * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: percent)
+                .tint(.mint)
+        }
+    }
 }
 
-private struct SpeciesPieChart: View {
+struct SpeciesPieChart: View {
     let speciesCounts: [String: Int]
 
     var body: some View {

@@ -17,7 +17,10 @@
 		09EDB33620E949CFB8F9A374 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179E38B4AF6547DCAB976461 /* SettingsView.swift */; };
 		1A8AD4CA479B4E44A4CB6A67 /* DetectionPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D45EAEB215D4E3E923F4685 /* DetectionPhoto.swift */; };
 		24D10D5C57174537B8793018 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */; };
+		292BEE500D154545920501F3 /* GalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D56B94BEBB404C96AF4F1B /* GalleryView.swift */; };
 		7A3D83F3AB4E4D16A70B41B5 /* DetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC80135F4FC44FEFB44C0C13 /* DetectionService.swift */; };
+		96DA4A7FD0134C2D85999B32 /* TotalDetectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C91E4D7D7AB48ACB44B039F /* TotalDetectionsView.swift */; };
+		D39C98B04BAB459686C6378D /* SpeciesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A16D2609074BAABCB155C1 /* SpeciesView.swift */; };
 		40739A73032B4DFC8FB7175D /* FeederStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799C965C312845138A2A448C /* FeederStatus.swift */; };
 		4242C7A5FBA54BBC9F8A3979 /* CommunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62D1229D58747FF81A97060 /* CommunityView.swift */; };
 		48491DB133C847BF9F17CCED /* CommunityPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */; };
@@ -68,6 +71,9 @@
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		1C91E4D7D7AB48ACB44B039F /* TotalDetectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotalDetectionsView.swift; sourceTree = "<group>"; };
+		43D56B94BEBB404C96AF4F1B /* GalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryView.swift; sourceTree = "<group>"; };
+		81A16D2609074BAABCB155C1 /* SpeciesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeciesView.swift; sourceTree = "<group>"; };
 		7D45EAEB215D4E3E923F4685 /* DetectionPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionPhoto.swift; sourceTree = "<group>"; };
 		EC80135F4FC44FEFB44C0C13 /* DetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionService.swift; sourceTree = "<group>"; };
 		1234FD7FE251490297C62509 /* EnvironmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentView.swift; sourceTree = "<group>"; };
@@ -156,6 +162,9 @@
 				D62D1229D58747FF81A97060 /* CommunityView.swift */,
 				D486C746F43B4A3786347BBC /* DashboardView.swift */,
 				1234FD7FE251490297C62509 /* EnvironmentView.swift */,
+				43D56B94BEBB404C96AF4F1B /* GalleryView.swift */,
+				81A16D2609074BAABCB155C1 /* SpeciesView.swift */,
+				1C91E4D7D7AB48ACB44B039F /* TotalDetectionsView.swift */,
 				AF495273C37349C9A8B0DDFA /* NotificationsView.swift */,
 				179E38B4AF6547DCAB976461 /* SettingsView.swift */,
 			);
@@ -453,6 +462,9 @@
 				4242C7A5FBA54BBC9F8A3979 /* CommunityView.swift in Sources */,
 				773EC70103C14DD8A1A42DEC /* DashboardView.swift in Sources */,
 				A1FB670D60864FEDAEDF8CF4 /* EnvironmentView.swift in Sources */,
+				292BEE500D154545920501F3 /* GalleryView.swift in Sources */,
+				D39C98B04BAB459686C6378D /* SpeciesView.swift in Sources */,
+				96DA4A7FD0134C2D85999B32 /* TotalDetectionsView.swift in Sources */,
 				5A67B132A3A84C8EAE4FAFC7 /* NotificationsView.swift in Sources */,
 				09EDB33620E949CFB8F9A374 /* SettingsView.swift in Sources */,
 			);
