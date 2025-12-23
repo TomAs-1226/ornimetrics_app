@@ -13,19 +13,22 @@ struct EnvironmentView: View {
                             .font(.system(size: 48, weight: .bold))
                         Text(appState.environment.condition)
                             .font(.title2)
+                        Text("Feels like \(Int(appState.environment.feelsLikeC ?? appState.environment.temperatureC))°C")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack(spacing: 16) {
-                    GlassCard(title: "Humidity") {
-                        Text("\(appState.environment.humidity)%")
-                            .font(.title2.bold())
-                    }
-                    GlassCard(title: "Wind") {
-                        Text("\(Int(appState.environment.windKph)) kph")
-                            .font(.title2.bold())
-                    }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                    WeatherMetricCard(title: "Humidity", value: "\(Int(appState.environment.humidity))%")
+                    WeatherMetricCard(title: "Wind", value: "\(Int(appState.environment.windKph ?? 0)) kph")
+                    WeatherMetricCard(title: "Pressure", value: "\(Int(appState.environment.pressureMb ?? 0)) mb")
+                    WeatherMetricCard(title: "UV Index", value: "\(Int(appState.environment.uvIndex ?? 0))")
+                    WeatherMetricCard(title: "Visibility", value: "\(Int(appState.environment.visibilityKm ?? 0)) km")
+                    WeatherMetricCard(title: "Dew Point", value: "\(Int(appState.environment.dewPointC ?? 0))°C")
+                    WeatherMetricCard(title: "Precip", value: "\(appState.environment.precipitationMm ?? 0, specifier: "%.1f") mm")
+                    WeatherMetricCard(title: "Precip Chance", value: "\(Int((appState.environment.precipitationChance ?? 0) * 100))%")
                 }
 
                 GlassCard(title: "Historical context", subtitle: "From tagged photos") {
@@ -58,5 +61,17 @@ struct EnvironmentView: View {
         defer { isRefreshing = false }
         await appState.refreshEnvironment()
         Haptics.impact(.light)
+    }
+}
+
+private struct WeatherMetricCard: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        GlassCard(title: title) {
+            Text(value)
+                .font(.title3.bold())
+        }
     }
 }

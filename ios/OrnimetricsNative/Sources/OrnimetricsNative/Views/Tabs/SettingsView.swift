@@ -10,6 +10,7 @@ struct SettingsView: View {
                 GlassCard(title: "App configuration", subtitle: "Loaded from .env") {
                     ConfigRow(label: "Firebase project", value: appState.config.firebaseProjectId)
                     ConfigRow(label: "Firebase app ID", value: masked(appState.config.firebaseAppId))
+                    ConfigRow(label: "Firebase database", value: appState.config.firebaseDatabaseUrl)
                     ConfigRow(label: "Weather endpoint", value: appState.config.weatherEndpoint)
                     ConfigRow(label: "Weather API key", value: masked(appState.config.weatherApiKey))
                 }

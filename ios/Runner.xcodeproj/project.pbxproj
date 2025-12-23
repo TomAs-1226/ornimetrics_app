@@ -15,7 +15,9 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		09EDB33620E949CFB8F9A374 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179E38B4AF6547DCAB976461 /* SettingsView.swift */; };
+		1A8AD4CA479B4E44A4CB6A67 /* DetectionPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D45EAEB215D4E3E923F4685 /* DetectionPhoto.swift */; };
 		24D10D5C57174537B8793018 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */; };
+		7A3D83F3AB4E4D16A70B41B5 /* DetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC80135F4FC44FEFB44C0C13 /* DetectionService.swift */; };
 		40739A73032B4DFC8FB7175D /* FeederStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799C965C312845138A2A448C /* FeederStatus.swift */; };
 		4242C7A5FBA54BBC9F8A3979 /* CommunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62D1229D58747FF81A97060 /* CommunityView.swift */; };
 		48491DB133C847BF9F17CCED /* CommunityPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */; };
@@ -66,6 +68,8 @@
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		7D45EAEB215D4E3E923F4685 /* DetectionPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionPhoto.swift; sourceTree = "<group>"; };
+		EC80135F4FC44FEFB44C0C13 /* DetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionService.swift; sourceTree = "<group>"; };
 		1234FD7FE251490297C62509 /* EnvironmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentView.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -137,9 +141,11 @@
 				EFF46872BC144AE9804BA9E3 /* EnvLoader.swift */,
 				2C29F552A6AC44AB8F88739C /* AppState.swift */,
 				4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */,
+				7D45EAEB215D4E3E923F4685 /* DetectionPhoto.swift */,
 				799C965C312845138A2A448C /* FeederStatus.swift */,
 				179DEE762FD14D5E80423FB5 /* WeatherSnapshot.swift */,
 				0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */,
+				EC80135F4FC44FEFB44C0C13 /* DetectionService.swift */,
 				A137F3A782BD4ABEAB788F4F /* FirebaseService.swift */,
 				D092FA0E5FAE41368442A29F /* Haptics.swift */,
 				8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */,
@@ -432,9 +438,11 @@
 				AD1675F6E77446489607C7EC /* EnvLoader.swift in Sources */,
 				F66E32E6683C4FF683BF55F4 /* AppState.swift in Sources */,
 				48491DB133C847BF9F17CCED /* CommunityPost.swift in Sources */,
+				1A8AD4CA479B4E44A4CB6A67 /* DetectionPhoto.swift in Sources */,
 				40739A73032B4DFC8FB7175D /* FeederStatus.swift in Sources */,
 				F959B870610B4B2FB6595493 /* WeatherSnapshot.swift in Sources */,
 				6B9D3236BF0243F49F8852C0 /* AppleIntelligenceService.swift in Sources */,
+				7A3D83F3AB4E4D16A70B41B5 /* DetectionService.swift in Sources */,
 				F2EC57EF983845BBAD806E0E /* FirebaseService.swift in Sources */,
 				F73AC883D26648A18253DB62 /* Haptics.swift in Sources */,
 				24D10D5C57174537B8793018 /* WeatherService.swift in Sources */,
