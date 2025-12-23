@@ -17,15 +17,47 @@ class CommunityPostDetail extends StatefulWidget {
 class _CommunityPostDetailState extends State<CommunityPostDetail> {
   late final AiProvider _ai =
   RealAiProvider(model: widget.aiModel, apiKey: dotenv.env['OPENAI_API_KEY']);
-  final List<AiMessage> _messages = [AiMessage('assistant', 'Ask me about this sighting. I consider weather + feeder state.')];
+  late final List<AiMessage> _visibleMessages;
+  late final List<AiMessage> _hiddenPrompt;
   final _controller = TextEditingController();
   bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.post;
+    final contextSummary = [
+      'Caption: ${p.caption.isNotEmpty ? p.caption : 'No caption provided.'}',
+      'Time of day tag: ${p.timeOfDayTag}.',
+      'Model: ${p.model}.',
+      'Sensors -> food low: ${p.sensors.lowFood}, clogged: ${p.sensors.clogged}, cleaning due: ${p.sensors.cleaningDue}.',
+      if (p.weather != null)
+        'Weather -> ${p.weather!.temperatureC.toStringAsFixed(1)}C, '
+            '${p.weather!.humidity.toStringAsFixed(0)}% humidity, ${p.weather!.condition}, '
+            'precip chance ${((p.weather!.precipitationChance ?? 0) * 100).toStringAsFixed(0)}%.',
+    ].join(' ');
+    _hiddenPrompt = [
+      AiMessage(
+        'system',
+        'You are an avian behavior guide helping community members interpret a specific post. '
+            'Ground your answers in the post details, weather, sensors, and model information. '
+            'If recommending actions, keep them safe for wildlife and note uncertainty.',
+      ),
+      AiMessage('assistant', 'Post context (do not repeat to user): $contextSummary'),
+    ];
+    _visibleMessages = [
+      AiMessage(
+        'assistant',
+        'Ask me about this sighting. I will consider weather, sensors, and time of day when replying.',
+      ),
+    ];
+  }
 
   Future<void> _send() async {
     if (_controller.text.trim().isEmpty) return;
     setState(() {
       _sending = true;
-      _messages.add(AiMessage('user', _controller.text.trim()));
+      _visibleMessages.add(AiMessage('user', _controller.text.trim()));
     });
     final contextMap = {
       'weather': widget.post.weather != null
@@ -37,23 +69,24 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
         'snow': widget.post.weather?.isSnowing,
         'hail': widget.post.weather?.isHailing,
       },
-      'sensors': 'food low: ${widget.post.sensors.lowFood}, clogged: ${widget.post.sensors.clogged}, cleaning: ${widget.post.sensors.cleaningDue}',
+      'sensors':
+      'food low: ${widget.post.sensors.lowFood}, clogged: ${widget.post.sensors.clogged}, cleaning: ${widget.post.sensors.cleaningDue}',
       'model': widget.post.model,
       'tod': widget.post.timeOfDayTag,
       'caption': widget.post.caption,
+      'imageUrl': widget.post.imageUrl,
+      'createdAtIso': widget.post.createdAt.toIso8601String(),
     };
     AiMessage aiReply;
     try {
-      aiReply = await _ai.send(
-        List.from(_messages),
-        context: contextMap,
-        modelOverride: widget.aiModel,
-      );
+      final userMsg = AiMessage('user', _controller.text.trim());
+      final historyForAi = [..._hiddenPrompt, ..._visibleMessages.where((m) => m.role != 'system'), userMsg];
+      aiReply = await _ai.send(historyForAi, context: contextMap, modelOverride: widget.aiModel);
     } catch (e) {
       aiReply = AiMessage('ai', 'AI unavailable right now ($e). Please try again soon.');
     }
     setState(() {
-      _messages.add(aiReply);
+      _visibleMessages.add(aiReply);
       _sending = false;
       _controller.clear();
     });
@@ -82,9 +115,9 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
                   child: ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _messages.length,
+                    itemCount: _visibleMessages.length,
                     itemBuilder: (_, i) {
-                      final m = _messages[i];
+                      final m = _visibleMessages[i];
                       final isUser = m.role == 'user';
                       return Align(
                         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -160,11 +193,13 @@ class _CommunityPostDetailState extends State<CommunityPostDetail> {
             ),
             const SizedBox(height: 12),
             Text(p.caption, style: const TextStyle(fontSize: 16)),
-            if (p.imageUrl != null) ...[
+            if (p.imageData != null || p.imageUrl != null) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(p.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                child: p.imageData != null
+                    ? Image.memory(p.imageData!, height: 200, width: double.infinity, fit: BoxFit.cover)
+                    : Image.network(p.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover),
               )
             ],
             const SizedBox(height: 12),

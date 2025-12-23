@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -283,9 +284,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
   }
 
   Future<void> _refreshPosts() async {
-    setState(() {
-      _postsStream = _service.watchCommunityPosts(limit: _postLimit);
-    });
+    try {
+      final nextStream = _service.watchCommunityPosts(limit: _postLimit);
+      if (!mounted) return;
+      setState(() {
+        _postsStream = nextStream;
+        _status = '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Could not refresh feed: $e');
+    }
   }
 
   List<CommunityPost> _filterPosts(List<CommunityPost> posts) {
@@ -502,13 +511,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
       _status = '';
     });
     try {
-      await _service.createPost(
+      await _service
+          .createPost(
         caption: _captionController.text.trim(),
         photo: _photo,
         author: refreshedUser.email ?? 'community member',
         sensors: SensorSnapshot(lowFood: _tagFoodLow, clogged: _tagClogged, cleaningDue: _tagCleaningDue),
         weather: _weather,
-      );
+      )
+          .timeout(const Duration(seconds: 45), onTimeout: () {
+        throw TimeoutException('Posting took too long. Check your connection and try again.');
+      });
       _captionController.clear();
       _photo = null;
       await _refreshPosts();
@@ -1041,11 +1054,13 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
                   p.caption.isNotEmpty ? p.caption : '(No caption)',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: fg),
                 ),
-                if (p.imageUrl != null) ...[
+                if (p.imageData != null || p.imageUrl != null) ...[
                   const SizedBox(height: 10),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
+                    child: p.imageData != null
+                        ? Image.memory(p.imageData!, height: 180, width: double.infinity, fit: BoxFit.cover)
+                        : Image.network(p.imageUrl!, height: 180, width: double.infinity, fit: BoxFit.cover),
                   )
                 ],
                 const SizedBox(height: 10),

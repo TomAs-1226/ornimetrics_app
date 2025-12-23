@@ -119,6 +119,31 @@ class TrendSignal {
   String get direction => delta > 0 ? 'rising' : (delta < 0 ? 'falling' : 'steady');
 }
 
+class TrendRollup {
+  const TrendRollup({
+    required this.recentTotal,
+    required this.priorTotal,
+    this.busiestDayKey,
+    this.busiestDayTotal = 0,
+  });
+
+  final int recentTotal;
+  final int priorTotal;
+  final String? busiestDayKey;
+  final int busiestDayTotal;
+
+  double get pctChange => priorTotal == 0
+      ? (recentTotal > 0 ? 100.0 : 0.0)
+      : ((recentTotal - priorTotal) / priorTotal) * 100;
+
+  String get direction =>
+      recentTotal == priorTotal ? 'steady' : (recentTotal > priorTotal ? 'rising' : 'falling');
+
+  String get pctLabel => '${pctChange >= 0 ? '+' : ''}${pctChange.toStringAsFixed(1)}%';
+
+  bool get hasAnyData => recentTotal > 0 || priorTotal > 0 || busiestDayKey != null;
+}
+
 // Model for actionable eco tasks
 class EcoTask {
   final String id; // uuid-like
@@ -514,6 +539,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   bool _showAdvancedTrends = false;
   bool _trendsCollapsed = false;
   Map<String, Map<String, double>> _recentDailyCounts = {};
+  TrendRollup _trendRollup = const TrendRollup(
+    recentTotal: 0,
+    priorTotal: 0,
+    busiestDayKey: null,
+    busiestDayTotal: 0,
+  );
+  String? _weatherTrendNote;
 
   late final AnimationController _aiAnim;
   // State variables for AI Analysis
@@ -783,9 +815,45 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     return signals;
   }
 
+  TrendRollup _buildTrendRollup(Map<String, Map<String, double>> daily) {
+    if (daily.isEmpty) {
+      return const TrendRollup(recentTotal: 0, priorTotal: 0, busiestDayKey: null, busiestDayTotal: 0);
+    }
+    final dates = daily.keys.toList()..sort();
+    final recent = dates.sublist(math.max(0, dates.length - 7));
+    final priorStart = math.max(0, dates.length - 14);
+    final prior = dates.sublist(priorStart, math.max(priorStart, dates.length - recent.length));
+
+    int sumFor(List<String> keys) {
+      int total = 0;
+      for (final d in keys) {
+        total += (daily[d]?.values.fold<double>(0, (a, b) => a + b) ?? 0).round();
+      }
+      return total;
+    }
+
+    int busiestTotal = 0;
+    String? busiestKey;
+    for (final d in dates) {
+      final dayTotal = (daily[d]?.values.fold<double>(0, (a, b) => a + b) ?? 0).round();
+      if (dayTotal > busiestTotal) {
+        busiestTotal = dayTotal;
+        busiestKey = d;
+      }
+    }
+
+    return TrendRollup(
+      recentTotal: sumFor(recent),
+      priorTotal: sumFor(prior),
+      busiestDayKey: busiestKey,
+      busiestDayTotal: busiestTotal,
+    );
+  }
+
   void _rebuildTrendSignals() {
     final fromDaily = _trendSignalsFromDailyCounts(_recentDailyCounts);
     final fallback = _deriveTrendsFromPhotos(_photos);
+    _weatherTrendNote = _buildWeatherTrendNote(_photos);
     if (!mounted) return;
     setState(() {
       _trendSignals = fromDaily.isNotEmpty ? fromDaily : fallback;
@@ -813,6 +881,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       if (!mounted) return;
       setState(() {
         _recentDailyCounts = daily;
+        _trendRollup = _buildTrendRollup(daily);
+        _weatherTrendNote = _buildWeatherTrendNote(_photos);
       });
       _rebuildTrendSignals();
     } catch (e) {
@@ -1074,6 +1144,51 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         .toList();
   }
 
+  String? _buildWeatherTrendNote(List<DetectionPhoto> photos) {
+    final now = DateTime.now().toUtc();
+    final cutoff = now.subtract(const Duration(days: 7));
+    final tagged = photos.where((p) => p.timestamp.toUtc().isAfter(cutoff) && p.weatherAtCapture != null);
+    if (tagged.isEmpty) return null;
+
+    int wet = 0;
+    int dry = 0;
+    double tempSum = 0;
+    double humiditySum = 0;
+    int tempCount = 0;
+    final Map<String, int> skyCounts = {};
+
+    for (final p in tagged) {
+      final w = p.weatherAtCapture!;
+      final isWet = w.isRaining || w.isSnowing || w.isHailing || (w.precipitationMm ?? 0) > 0;
+      if (isWet) {
+        wet++;
+      } else {
+        dry++;
+      }
+      if (w.temperatureC != null) {
+        tempSum += w.temperatureC!;
+        tempCount++;
+      }
+      humiditySum += (w.humidity ?? 0);
+      final skyKey = (w.condition.isNotEmpty ? w.condition : 'Unknown').toLowerCase();
+      skyCounts[skyKey] = (skyCounts[skyKey] ?? 0) + 1;
+    }
+
+    final topSky = skyCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final skyLabel = topSky.isNotEmpty ? topSky.first.key : 'n/a';
+    final avgTemp = tempCount == 0 ? null : tempSum / tempCount;
+    final avgHumidity = tagged.isEmpty ? null : humiditySum / tagged.length;
+
+    final parts = <String>[];
+    parts.add('Weather-tagged captures: ${tagged.length}');
+    parts.add('Wet vs dry: $wet / $dry');
+    if (avgTemp != null) parts.add('Avg temp ${avgTemp.toStringAsFixed(1)}°C');
+    if (avgHumidity != null) parts.add('Avg humidity ${avgHumidity.toStringAsFixed(0)}%');
+    parts.add('Common sky: $skyLabel');
+    return parts.join(' • ');
+  }
+
   Future<void> _generateTrendAiInsight() async {
     if (_trendSignals.isEmpty) return;
     setState(() {
@@ -1084,15 +1199,41 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final summary = _trendSignals
         .map((s) => '${s.species}: ${s.direction} (${s.start} → ${s.end})')
         .join('; ');
+    final rollup = _trendRollup;
+    final rollupText = rollup.hasAnyData
+        ? 'Activity last 7 days: ${rollup.recentTotal} (prior 7: ${rollup.priorTotal}, ${rollup.pctLabel}). '
+        '${rollup.busiestDayKey != null ? 'Busiest day ${rollup.busiestDayKey} with ${rollup.busiestDayTotal} detections.' : ''}'
+        : 'Limited rollup data available.';
+    final topSpecies = _speciesDataMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final topText = topSpecies.take(5).map((e) => '${_formatSpeciesName(e.key)}:${e.value.toInt()}').join(', ');
+    final weatherNote = _weatherTrendNote;
 
     final messages = <AiMessage>[
-      AiMessage('system', 'You are an ornithology analyst. Blend migration heuristics with numeric trends.'),
-      AiMessage('user', 'Here are 7-day trend signals: $summary. Provide 3 succinct migration or behavior insights.'),
+      AiMessage('system',
+          'You are an ornithology analyst. Blend migration heuristics with numeric trends, rollups, and local signals.'),
+      AiMessage(
+        'user',
+        [
+          'Use these signals to suggest migration or behavior insights (3 bullets max).',
+          'Trend signals: $summary.',
+          'Rollup: $rollupText',
+          if (topText.isNotEmpty) 'Top species totals: $topText.',
+          if (_lastUpdated != null)
+            'Latest data refresh: ${DateFormat('yyyy-MM-dd HH:mm').format(_lastUpdated!)}.',
+          if (weatherNote != null) 'Weather correlation: $weatherNote.',
+        ].join(' '),
+      ),
     ];
 
     try {
       final reply = await _trendAi.send(messages, context: {
         'location': _position != null ? '${_position!.latitude},${_position!.longitude}' : 'unknown',
+        'rollup_recent_7d': rollup.recentTotal,
+        'rollup_prior_7d': rollup.priorTotal,
+        'busiest_day': rollup.busiestDayKey ?? 'n/a',
+        'top_species': topText,
+        if (weatherNote != null) 'weather_note': weatherNote,
       });
       if (!mounted) return;
       setState(() {
@@ -3378,11 +3519,20 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget _buildTrendsCard() {
     return LayoutBuilder(builder: (context, constraints) {
       final chipMaxWidth = math.max(160.0, math.min(constraints.maxWidth - 32, 320.0));
-      final isNarrow = constraints.maxWidth < 420;
+      String _humanDay(String key) {
+        try {
+          final dt = DateTime.parse(key);
+          return DateFormat('MMM d').format(dt);
+        } catch (_) {
+          return key;
+        }
+      }
+      final rollup = _trendRollup;
       final actionRow = Wrap(
         spacing: 6,
         runSpacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.end,
         children: [
           IconButton(
             icon: Icon(_trendsCollapsed ? Icons.unfold_more : Icons.unfold_less),
@@ -3420,31 +3570,50 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (isNarrow)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Migration & activity trends',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    actionRow,
-                  ],
-                )
-              else
+              if (rollup.hasAnyData) ...[
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Migration & activity trends',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                      ),
+                    Icon(
+                      rollup.direction == 'rising'
+                          ? Icons.trending_up
+                          : rollup.direction == 'falling'
+                          ? Icons.trending_down
+                          : Icons.horizontal_rule,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 8),
-                    Flexible(child: actionRow),
+                    Expanded(
+                      child: Text(
+                        'Past 7 days: ${rollup.recentTotal} detections '
+                            '(${rollup.pctLabel} vs prior 7). '
+                            '${rollup.busiestDayKey != null ? 'Busiest ${_humanDay(rollup.busiestDayKey!)} • ${rollup.busiestDayTotal}' : ''}',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
                   ],
                 ),
+                const SizedBox(height: 10),
+              ],
+              const Text('Migration & activity trends',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Align(alignment: Alignment.centerRight, child: actionRow),
               const SizedBox(height: 8),
+              if (_weatherTrendNote != null) ...[
+                Row(
+                  children: [
+                    Icon(Icons.cloudy_snowing, size: 18, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _weatherTrendNote!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
               if (changing.isEmpty)
                 Text(
                   'Need more data to spot trends. Add snapshots with species labels over several days.',
