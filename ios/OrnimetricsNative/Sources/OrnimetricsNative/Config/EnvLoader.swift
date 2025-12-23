@@ -2,7 +2,7 @@ import Foundation
 
 struct EnvLoader {
     static func load() -> [String: String] {
-        let fileNames = [".env", "env"]
+        let fileNames = [".env", ".env.example", "env"]
         for name in fileNames {
             if let url = Bundle.main.url(forResource: name, withExtension: nil),
                let contents = try? String(contentsOf: url) {

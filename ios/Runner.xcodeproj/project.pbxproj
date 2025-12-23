@@ -14,6 +14,29 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		09EDB33620E949CFB8F9A374 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179E38B4AF6547DCAB976461 /* SettingsView.swift */; };
+		24D10D5C57174537B8793018 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */; };
+		40739A73032B4DFC8FB7175D /* FeederStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799C965C312845138A2A448C /* FeederStatus.swift */; };
+		4242C7A5FBA54BBC9F8A3979 /* CommunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D62D1229D58747FF81A97060 /* CommunityView.swift */; };
+		48491DB133C847BF9F17CCED /* CommunityPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */; };
+		5148EB6CEAC94C10B9A76EE0 /* .env.example in Resources */ = {isa = PBXBuildFile; fileRef = 34DF42B9B98C4E3BBA726D60 /* .env.example */; };
+		5A67B132A3A84C8EAE4FAFC7 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF495273C37349C9A8B0DDFA /* NotificationsView.swift */; };
+		5E7E5BFD42F3460DAB0E373C /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45837B6A5A99423EA5FBC7D3 /* GlassCard.swift */; };
+		62560BFB3D0F4CC491EF30AF /* WrapHStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2C3BC3295644988474777D /* WrapHStack.swift */; };
+		6B9D3236BF0243F49F8852C0 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */; };
+		773EC70103C14DD8A1A42DEC /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D486C746F43B4A3786347BBC /* DashboardView.swift */; };
+		7A163520B7BB4089AB15DE2B /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		8483A2AB93444F92B19B5544 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87A29A28FCC64774999B9864 /* AppConfig.swift */; };
+		8906275050ED41C4B4244910 /* BiometricGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50C0E8B8F49499E81C1B82E /* BiometricGateView.swift */; };
+		971516FEF3974D64B73E34C0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E3C65BE08D4066B9DD5BBB /* RootView.swift */; };
+		982017FA4489460D857594F1 /* OrnimetricsNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77EF8049BA5849159BDD78C8 /* OrnimetricsNativeApp.swift */; };
+		A1FB670D60864FEDAEDF8CF4 /* EnvironmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1234FD7FE251490297C62509 /* EnvironmentView.swift */; };
+		AD1675F6E77446489607C7EC /* EnvLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF46872BC144AE9804BA9E3 /* EnvLoader.swift */; };
+		E09F9A0595924879B979D56D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
+		F2EC57EF983845BBAD806E0E /* FirebaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A137F3A782BD4ABEAB788F4F /* FirebaseService.swift */; };
+		F66E32E6683C4FF683BF55F4 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C29F552A6AC44AB8F88739C /* AppState.swift */; };
+		F73AC883D26648A18253DB62 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D092FA0E5FAE41368442A29F /* Haptics.swift */; };
+		F959B870610B4B2FB6595493 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 179DEE762FD14D5E80423FB5 /* WeatherSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,23 +65,53 @@
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		1234FD7FE251490297C62509 /* EnvironmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentView.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		34DF42B9B98C4E3BBA726D60 /* .env.example */ = {isa = PBXFileReference; lastKnownFileType = text; path = .env.example; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		3AECEC31F2FE464F8357E603 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		45837B6A5A99423EA5FBC7D3 /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityPost.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		799C965C312845138A2A448C /* FeederStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeederStatus.swift; sourceTree = "<group>"; };
+		87A29A28FCC64774999B9864 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		8A2C3BC3295644988474777D /* WrapHStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WrapHStack.swift; sourceTree = "<group>"; };
+		8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
+		97E3F26C1B3C4CC7B2D9B2E0 /* OrnimetricsNative.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OrnimetricsNative.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97C146FB1CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A137F3A782BD4ABEAB788F4F /* FirebaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseService.swift; sourceTree = "<group>"; };
+		AF495273C37349C9A8B0DDFA /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		C50C0E8B8F49499E81C1B82E /* BiometricGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGateView.swift; sourceTree = "<group>"; };
+		D092FA0E5FAE41368442A29F /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		D486C746F43B4A3786347BBC /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		D62D1229D58747FF81A97060 /* CommunityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityView.swift; sourceTree = "<group>"; };
+		EFF46872BC144AE9804BA9E3 /* EnvLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvLoader.swift; sourceTree = "<group>"; };
+		F6E3C65BE08D4066B9DD5BBB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		179E38B4AF6547DCAB976461 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		179DEE762FD14D5E80423FB5 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
+		2C29F552A6AC44AB8F88739C /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		77EF8049BA5849159BDD78C8 /* OrnimetricsNativeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrnimetricsNativeApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		97C146EB1CF9000F007C117D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3BF7363D7B6942FE997249CE /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -76,6 +129,53 @@
 			path = RunnerTests;
 			sourceTree = "<group>";
 		};
+		92FDCEF6D5B349BB9EFCA1A6 /* OrnimetricsNativeSources */ = {
+			isa = PBXGroup;
+			children = (
+				77EF8049BA5849159BDD78C8 /* OrnimetricsNativeApp.swift */,
+				87A29A28FCC64774999B9864 /* AppConfig.swift */,
+				EFF46872BC144AE9804BA9E3 /* EnvLoader.swift */,
+				2C29F552A6AC44AB8F88739C /* AppState.swift */,
+				4E031DA6946A4CF9B6F1F190 /* CommunityPost.swift */,
+				799C965C312845138A2A448C /* FeederStatus.swift */,
+				179DEE762FD14D5E80423FB5 /* WeatherSnapshot.swift */,
+				0649E9ADA61D479FBDCE18FF /* AppleIntelligenceService.swift */,
+				A137F3A782BD4ABEAB788F4F /* FirebaseService.swift */,
+				D092FA0E5FAE41368442A29F /* Haptics.swift */,
+				8FDF81F8872F4E72A63E1D87 /* WeatherService.swift */,
+				45837B6A5A99423EA5FBC7D3 /* GlassCard.swift */,
+				8A2C3BC3295644988474777D /* WrapHStack.swift */,
+				F6E3C65BE08D4066B9DD5BBB /* RootView.swift */,
+				C50C0E8B8F49499E81C1B82E /* BiometricGateView.swift */,
+				D62D1229D58747FF81A97060 /* CommunityView.swift */,
+				D486C746F43B4A3786347BBC /* DashboardView.swift */,
+				1234FD7FE251490297C62509 /* EnvironmentView.swift */,
+				AF495273C37349C9A8B0DDFA /* NotificationsView.swift */,
+				179E38B4AF6547DCAB976461 /* SettingsView.swift */,
+			);
+			name = Sources;
+			path = OrnimetricsNative/Sources/OrnimetricsNative;
+			sourceTree = "<group>";
+		};
+		E8B1B5CBD72C4E4EA706B30D /* OrnimetricsNative */ = {
+			isa = PBXGroup;
+			children = (
+				92FDCEF6D5B349BB9EFCA1A6 /* OrnimetricsNativeSources */,
+				FEC662611A984BC3A03D23C4 /* Resources */,
+			);
+			name = OrnimetricsNative;
+			path = OrnimetricsNative;
+			sourceTree = "<group>";
+		};
+		FEC662611A984BC3A03D23C4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				3AECEC31F2FE464F8357E603 /* Info.plist */,
+				34DF42B9B98C4E3BBA726D60 /* .env.example */,
+			);
+			path = OrnimetricsNative/Resources;
+			sourceTree = "<group>";
+		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
 			isa = PBXGroup;
 			children = (
@@ -91,6 +191,7 @@
 			isa = PBXGroup;
 			children = (
 				9740EEB11CF90186004384FC /* Flutter */,
+				E8B1B5CBD72C4E4EA706B30D /* OrnimetricsNative */,
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
@@ -101,6 +202,7 @@
 			isa = PBXGroup;
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
+				97E3F26C1B3C4CC7B2D9B2E0 /* OrnimetricsNative.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 			);
 			name = Products;
@@ -161,6 +263,24 @@
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F6952714F44F4B8AA2B23C6E /* OrnimetricsNative */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 67A67088DBFD468090E5777E /* Build configuration list for PBXNativeTarget "OrnimetricsNative" */;
+			buildPhases = (
+				36253B7270DC48909C9518A3 /* Copy .env */,
+				C55F4395147849D7B209F939 /* Sources */,
+				3BF7363D7B6942FE997249CE /* Frameworks */,
+				595C2567188C42A69D7F0FDB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OrnimetricsNative;
+			productName = OrnimetricsNative;
+			productReference = 97E3F26C1B3C4CC7B2D9B2E0 /* OrnimetricsNative.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -179,6 +299,9 @@
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
 					};
+					F6952714F44F4B8AA2B23C6E = {
+						CreatedOnToolsVersion = 15.1;
+					};
 				};
 			};
 			buildConfigurationList = 97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */;
@@ -196,6 +319,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				F6952714F44F4B8AA2B23C6E /* OrnimetricsNative */,
 			);
 		};
 /* End PBXProject section */
@@ -219,6 +343,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		595C2567188C42A69D7F0FDB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A163520B7BB4089AB15DE2B /* LaunchScreen.storyboard in Resources */,
+				E09F9A0595924879B979D56D /* Assets.xcassets in Resources */,
+				5148EB6CEAC94C10B9A76EE0 /* .env.example in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -237,6 +371,22 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+		};
+		36253B7270DC48909C9518A3 /* Copy .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../.env",
+			);
+			name = "Copy .env";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -f \"${SRCROOT}/../.env\" ]; then\n  cp \"${SRCROOT}/../.env\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/.env\"\nfi\n";
 		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -273,6 +423,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C55F4395147849D7B209F939 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				982017FA4489460D857594F1 /* OrnimetricsNativeApp.swift in Sources */,
+				8483A2AB93444F92B19B5544 /* AppConfig.swift in Sources */,
+				AD1675F6E77446489607C7EC /* EnvLoader.swift in Sources */,
+				F66E32E6683C4FF683BF55F4 /* AppState.swift in Sources */,
+				48491DB133C847BF9F17CCED /* CommunityPost.swift in Sources */,
+				40739A73032B4DFC8FB7175D /* FeederStatus.swift in Sources */,
+				F959B870610B4B2FB6595493 /* WeatherSnapshot.swift in Sources */,
+				6B9D3236BF0243F49F8852C0 /* AppleIntelligenceService.swift in Sources */,
+				F2EC57EF983845BBAD806E0E /* FirebaseService.swift in Sources */,
+				F73AC883D26648A18253DB62 /* Haptics.swift in Sources */,
+				24D10D5C57174537B8793018 /* WeatherService.swift in Sources */,
+				5E7E5BFD42F3460DAB0E373C /* GlassCard.swift in Sources */,
+				62560BFB3D0F4CC491EF30AF /* WrapHStack.swift in Sources */,
+				971516FEF3974D64B73E34C0 /* RootView.swift in Sources */,
+				8906275050ED41C4B4244910 /* BiometricGateView.swift in Sources */,
+				4242C7A5FBA54BBC9F8A3979 /* CommunityView.swift in Sources */,
+				773EC70103C14DD8A1A42DEC /* DashboardView.swift in Sources */,
+				A1FB670D60864FEDAEDF8CF4 /* EnvironmentView.swift in Sources */,
+				5A67B132A3A84C8EAE4FAFC7 /* NotificationsView.swift in Sources */,
+				09EDB33620E949CFB8F9A374 /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -303,6 +480,27 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		27362E773F9E4097BB5BA42D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = OrnimetricsNative/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.ornimetricsNative;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -577,6 +775,26 @@
 			};
 			name = Release;
 		};
+		1EFAF281A4DD477E931EE69A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = OrnimetricsNative/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.ornimetricsNative;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -586,6 +804,15 @@
 				331C8088294A63A400263BE5 /* Debug */,
 				331C8089294A63A400263BE5 /* Release */,
 				331C808A294A63A400263BE5 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		67A67088DBFD468090E5777E /* Build configuration list for PBXNativeTarget "OrnimetricsNative" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27362E773F9E4097BB5BA42D /* Debug */,
+				1EFAF281A4DD477E931EE69A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
