@@ -1,1 +1,0 @@
-/Users/tomas/AndroidStudioProjects/ornimetrics_app/android/app/src/main/kotlin/com/example/ornimetrics_app/MainActivity.kt
