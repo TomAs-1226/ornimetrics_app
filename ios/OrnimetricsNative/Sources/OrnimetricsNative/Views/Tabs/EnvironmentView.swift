@@ -45,14 +45,16 @@ struct EnvironmentView: View {
                     HStack {
                         Image(systemName: "location.fill")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Location secured")
+                            Text(appState.locationStatus)
                                 .font(.headline)
-                            Text("Using current GPS coordinates for weather + history.")
+                            Text(locationSubtitle)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Request access") {
+                            appState.locationService.requestAuthorization()
+                            appState.locationService.requestLocation()
                             Haptics.impact(.light)
                         }
                         .buttonStyle(.bordered)
@@ -97,6 +99,16 @@ struct EnvironmentView: View {
             ? "Weather API key is missing. Add WEATHER_API_KEY to load live conditions."
             : nil
         Haptics.impact(.light)
+    }
+
+    private var locationSubtitle: String {
+        if let location = appState.currentLocation {
+            return String(format: "Lat %.4f, Lon %.4f", location.coordinate.latitude, location.coordinate.longitude)
+        }
+        if let error = appState.locationError {
+            return error
+        }
+        return "Grant location access to attach real weather to your feed."
     }
 }
 

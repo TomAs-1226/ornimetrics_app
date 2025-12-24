@@ -8,6 +8,7 @@ struct AppConfig {
     let firebaseDatabaseUrl: String
     let weatherApiKey: String
     let weatherEndpoint: String
+    let openAiApiKey: String
 
     static func load() -> AppConfig {
         let env = EnvLoader.load()
@@ -18,7 +19,8 @@ struct AppConfig {
             firebaseSenderId: env["FIREBASE_SENDER_ID"] ?? "",
             firebaseDatabaseUrl: env["FIREBASE_DATABASE_URL"] ?? "",
             weatherApiKey: env["WEATHER_API_KEY"] ?? "",
-            weatherEndpoint: env["WEATHER_ENDPOINT"] ?? "https://api.weatherapi.com/v1"
+            weatherEndpoint: env["WEATHER_ENDPOINT"] ?? "https://api.weatherapi.com/v1",
+            openAiApiKey: env["OPENAI_API_KEY"] ?? ""
         )
     }
 }

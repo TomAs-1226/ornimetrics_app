@@ -1,3 +1,5 @@
+import Combine
+import CoreLocation
 import Foundation
 
 @MainActor
@@ -16,6 +18,9 @@ final class AppState: ObservableObject {
     @Published var trendRollup: TrendRollup = TrendRollup(recentTotal: 0, priorTotal: 0, busiestDayKey: nil, busiestDayTotal: 0)
     @Published var aiAnalysis: String = ""
     @Published var accentColorHex: String = "#2ECC71"
+    @Published var currentLocation: CLLocation?
+    @Published var locationStatus: String = "Location status unavailable"
+    @Published var locationError: String?
 
     let config: AppConfig
     let weatherService: WeatherService
@@ -23,7 +28,10 @@ final class AppState: ObservableObject {
     let appleIntelligenceService: AppleIntelligenceService
     let detectionService: DetectionService
     let notificationsCenter: NotificationsCenter
+    let locationService: LocationService
+    let openAIService: OpenAIService?
     private var autoRefreshTimer: Timer?
+    private var cancellables: Set<AnyCancellable> = []
 
     init(config: AppConfig) {
         self.config = config
@@ -32,20 +40,41 @@ final class AppState: ObservableObject {
         self.appleIntelligenceService = AppleIntelligenceService()
         self.detectionService = DetectionService(config: config)
         self.notificationsCenter = NotificationsCenter()
+        self.locationService = LocationService()
+        self.openAIService = config.openAiApiKey.isEmpty ? nil : OpenAIService(apiKey: config.openAiApiKey)
         self.accentColorHex = UserDefaults.standard.string(forKey: "pref_seed_color_hex") ?? "#2ECC71"
         loadTasks()
+
+        locationService.$location
+            .sink { [weak self] location in
+                self?.currentLocation = location
+            }
+            .store(in: &cancellables)
+        locationService.$authorizationStatus
+            .sink { [weak self] _ in
+                self?.locationStatus = self?.locationService.statusDescription ?? "Location status unavailable"
+            }
+            .store(in: &cancellables)
+        locationService.$lastError
+            .sink { [weak self] error in
+                self?.locationError = error
+            }
+            .store(in: &cancellables)
     }
 
     func bootstrap() async {
+        locationService.requestAuthorization()
+        locationService.requestLocation()
         await refreshAll()
-        notificationsCenter.startFoodLevelTracking()
+        notificationsCenter.startTelemetryTracking(databaseUrl: config.firebaseDatabaseUrl)
         configureAutoRefresh()
     }
 
     func refreshEnvironment() async {
         do {
-            let snapshot = try await weatherService.fetchCurrentWeather(latitude: feederStatus.location.latitude,
-                                                                        longitude: feederStatus.location.longitude)
+            let location = currentLocation ?? CLLocation(latitude: feederStatus.location.latitude, longitude: feederStatus.location.longitude)
+            let snapshot = try await weatherService.fetchCurrentWeather(latitude: location.coordinate.latitude,
+                                                                        longitude: location.coordinate.longitude)
             environment = snapshot
             MaintenanceRulesEngine.evaluateWeather(snapshot, preferences: notificationsCenter.preferences, notifications: notificationsCenter)
         } catch {
@@ -88,12 +117,54 @@ final class AppState: ObservableObject {
     }
 
     func generateAiAnalysis() async {
-        let summary = await appleIntelligenceService.generateDashboardSummary(
+        if let openAIService {
+            let prompt = """
+            Summarize the latest wildlife dashboard in two sentences.
+            Total detections: \(totalDetections).
+            Unique species: \(speciesCounts.count).
+            Weather: \(environment.condition), \(Int(environment.temperatureC))°C, humidity \(Int(environment.humidity))%.
+            Highlight one action to keep the feeder safe.
+            """
+            do {
+                let reply = try await openAIService.chat(
+                    model: UserDefaults.standard.string(forKey: "pref_ai_model") ?? "gpt-4o-mini",
+                    messages: [OpenAIChatMessage(role: "user", content: prompt)]
+                )
+                aiAnalysis = reply
+                return
+            } catch {
+                // fall back to on-device summary
+            }
+        }
+        aiAnalysis = await appleIntelligenceService.generateDashboardSummary(
             totalDetections: totalDetections,
             uniqueSpecies: speciesCounts.count,
             weather: environment
         )
-        aiAnalysis = summary
+    }
+
+    func generateCommunityReply(userMessage: String, post: CommunityPost, model: String) async -> String {
+        if let openAIService {
+            let weatherSummary = post.weather.map { "\($0.condition), \($0.temperatureC)°C, humidity \($0.humidity)%" } ?? "No weather snapshot"
+            let prompt = """
+            You are an avian behavior guide. Reply concisely with safe, practical advice.
+            Post caption: \(post.caption).
+            Time of day: \(post.timeOfDayTag).
+            Sensors: food low \(post.sensors.lowFood), clogged \(post.sensors.clogged), cleaning due \(post.sensors.cleaningDue).
+            Weather: \(weatherSummary).
+            User question: \(userMessage)
+            """
+            do {
+                let reply = try await openAIService.chat(
+                    model: model,
+                    messages: [OpenAIChatMessage(role: "user", content: prompt)]
+                )
+                return reply
+            } catch {
+                return await appleIntelligenceService.generateReply(userMessage: userMessage, post: post, weather: post.weather)
+            }
+        }
+        return await appleIntelligenceService.generateReply(userMessage: userMessage, post: post, weather: post.weather)
     }
 
     func addTask(_ task: EcoTask) {

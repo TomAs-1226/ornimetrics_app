@@ -111,6 +111,30 @@ struct NotificationsView: View {
                         Text("High").tag(UsageSensitivity.high)
                     }
                     .pickerStyle(.segmented)
+
+                    Text("Weather cooldown (\(Int(notifications.preferences.weatherCooldownHours))h)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Slider(
+                        value: Binding(
+                            get: { notifications.preferences.weatherCooldownHours },
+                            set: { newValue in updatePrefs { $0.weatherCooldownHours = newValue } }
+                        ),
+                        in: 1...48,
+                        step: 1
+                    )
+
+                    Text("Heavy use cooldown (\(Int(notifications.preferences.heavyUseCooldownHours))h)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Slider(
+                        value: Binding(
+                            get: { notifications.preferences.heavyUseCooldownHours },
+                            set: { newValue in updatePrefs { $0.heavyUseCooldownHours = newValue } }
+                        ),
+                        in: 1...48,
+                        step: 1
+                    )
                 }
 
                 GlassCard(title: "Food level") {
@@ -119,10 +143,6 @@ struct NotificationsView: View {
                         .font(.title2.bold())
                     ProgressView(value: percent, total: 100)
                         .tint(.mint)
-                    Button("Simulate low food") {
-                        notifications.simulateLowFood()
-                    }
-                    .buttonStyle(.bordered)
                 }
 
                 GlassCard(title: "Recent notification events") {
@@ -155,9 +175,6 @@ struct NotificationsView: View {
             LinearGradient(colors: [Color.purple.opacity(0.2), Color.blue.opacity(0.1)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
-        .onAppear {
-            notifications.startFoodLevelTracking()
-        }
     }
 
     private func updatePrefs(_ update: (inout NotificationPreferences) -> Void) {

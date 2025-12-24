@@ -61,13 +61,26 @@ struct SpeciesDetailView: View {
 
     private func generateInsights() async {
         loadingInsights = true
-        let count = photos.count
-        if count == 0 {
+        guard !photos.isEmpty else {
             insights = "\(speciesKey.replacingOccurrences(of: "_", with: " ")): no recent photos yet."
             loadingInsights = false
             return
         }
-        let intro = "\(speciesKey.replacingOccurrences(of: "_", with: " ")) appeared \(count) times recently. Monitor feeder traffic and adjust food levels accordingly."
+
+        let sorted = photos.sorted { $0.timestamp < $1.timestamp }
+        let first = sorted.first!.timestamp
+        let last = sorted.last!.timestamp
+        let dayKeys = Set(sorted.map { Calendar.current.startOfDay(for: $0.timestamp) })
+        let daysCovered = max(1, Calendar.current.dateComponents([.day], from: first, to: last).day ?? 0)
+        let consistency = Double(dayKeys.count) / Double(daysCovered)
+        let consistencyLabel: String
+        switch consistency {
+        case 0.7...: consistencyLabel = "high"
+        case 0.4..<0.7: consistencyLabel = "moderate"
+        default: consistencyLabel = "low"
+        }
+        let count = sorted.count
+        let intro = "\(speciesKey.replacingOccurrences(of: "_", with: " ")) appeared \(count) times over \(daysCovered) day(s). Presence consistency is \(consistencyLabel) (\(dayKeys.count) day(s) detected)."
         insights = intro
         loadingInsights = false
     }

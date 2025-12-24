@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 @MainActor
 final class NotificationsCenter: ObservableObject {
@@ -9,6 +10,8 @@ final class NotificationsCenter: ObservableObject {
 
     private var foodTimer: Timer?
     private var sentLowFoodAlert = false
+    private var lastWeatherTrigger: Date?
+    private var lastHeavyUseTrigger: Date?
 
     private let prefsKey = "ornimetrics.notification.preferences"
     private let promptedKey = "ornimetrics.notification.prompted"
@@ -42,18 +45,17 @@ final class NotificationsCenter: ObservableObject {
     }
 
     func requestPermissions() {
-        permissionsPrompted = true
-        UserDefaults.standard.set(true, forKey: promptedKey)
-    }
-
-    func simulateLowFood() {
-        guard preferences.lowFoodEnabled else { return }
-        emit(type: .lowFood, message: "Feeder food level is low. Time to refill!")
-    }
-
-    func simulateClogged() {
-        guard preferences.cloggedEnabled else { return }
-        emit(type: .clogged, message: "Possible feeder clog detected. Inspect the chute.")
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let granted = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+            await MainActor.run {
+                permissionsPrompted = true
+                UserDefaults.standard.set(true, forKey: promptedKey)
+                if granted == true {
+                    center.getNotificationSettings { _ in }
+                }
+            }
+        }
     }
 
     func triggerCleaningCheck() {
@@ -68,36 +70,34 @@ final class NotificationsCenter: ObservableObject {
 
     func triggerWeatherCleaning(reason: String) {
         guard preferences.weatherBasedCleaningEnabled else { return }
+        if let last = lastWeatherTrigger,
+           Date().timeIntervalSince(last) < preferences.weatherCooldownHours * 3600 {
+            return
+        }
         emit(type: .weatherBased, message: reason)
+        lastWeatherTrigger = Date()
     }
 
     func triggerHeavyUse(reason: String) {
         guard preferences.heavyUseEnabled else { return }
-        emit(type: .heavyUse, message: reason)
-    }
-
-    func startFoodLevelTracking() {
-        stopFoodLevelTracking()
-        foodTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let nextPercent = max(0, (self.foodLevel?.percentFull ?? 0.8) - Double.random(in: 0.02...0.05))
-            let reading = FoodLevelReading(percentFull: nextPercent * 100, timestamp: Date())
-            self.foodLevel = reading
-            if self.preferences.progressNotificationsEnabled {
-                // keep the latest reading in memory for UI
-            }
-            if self.preferences.lowFoodEnabled && reading.percentFull <= self.preferences.lowFoodThresholdPercent {
-                if !self.sentLowFoodAlert {
-                    self.emit(type: .lowFood, message: "Food level at \(Int(reading.percentFull))%. Time to refill.")
-                    self.sentLowFoodAlert = true
-                }
-            } else {
-                self.sentLowFoodAlert = false
-            }
+        if let last = lastHeavyUseTrigger,
+           Date().timeIntervalSince(last) < preferences.heavyUseCooldownHours * 3600 {
+            return
         }
+        emit(type: .heavyUse, message: reason)
+        lastHeavyUseTrigger = Date()
     }
 
-    func stopFoodLevelTracking() {
+    func startTelemetryTracking(databaseUrl: String) {
+        guard !databaseUrl.isEmpty else { return }
+        stopTelemetryTracking()
+        foodTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { await self?.fetchTelemetry(databaseUrl: databaseUrl) }
+        }
+        Task { await fetchTelemetry(databaseUrl: databaseUrl) }
+    }
+
+    func stopTelemetryTracking() {
         foodTimer?.invalidate()
         foodTimer = nil
     }
@@ -106,5 +106,65 @@ final class NotificationsCenter: ObservableObject {
         let event = NotificationEvent(type: type, message: message, timestamp: Date())
         events.insert(event, at: 0)
         events = Array(events.prefix(25))
+        scheduleLocalNotification(type: type, message: message)
+    }
+
+    private func fetchTelemetry(databaseUrl: String) async {
+        let base = databaseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let urlString = "\(base)/feeder_status.json"
+        guard let url = URL(string: urlString) else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+            if let percent = json["food_level_percent"] as? Double ?? (json["food_level_percent"] as? NSNumber)?.doubleValue {
+                let reading = FoodLevelReading(percentFull: percent, timestamp: Date())
+                foodLevel = reading
+                if preferences.lowFoodEnabled && percent <= preferences.lowFoodThresholdPercent {
+                    if !sentLowFoodAlert {
+                        emit(type: .lowFood, message: "Food level at \(Int(percent))%. Time to refill.")
+                        sentLowFoodAlert = true
+                    }
+                } else {
+                    sentLowFoodAlert = false
+                }
+            }
+
+            if preferences.cloggedEnabled, let clogged = json["clogged"] as? Bool, clogged {
+                emit(type: .clogged, message: "Possible feeder clog detected. Inspect the chute.")
+            }
+
+            if preferences.cleaningReminderEnabled, let cleaningDue = json["cleaning_due"] as? Bool, cleaningDue {
+                emit(type: .cleaningDue, message: "Cleaning due. It's time to sanitize the feeder.")
+            }
+
+            if preferences.heavyUseEnabled, let score = json["heavy_use_score"] as? Double ?? (json["heavy_use_score"] as? NSNumber)?.doubleValue {
+                let threshold: Double
+                switch preferences.heavyUseSensitivity {
+                case .low: threshold = 80
+                case .normal: threshold = 65
+                case .high: threshold = 50
+                }
+                if score >= threshold {
+                    triggerHeavyUse(reason: "High feeder activity detected (score \(Int(score)) ≥ \(Int(threshold))).")
+                }
+            }
+        } catch {
+            // swallow telemetry errors for now
+        }
+    }
+
+    private func scheduleLocalNotification(type: NotificationType, message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = type.title
+        content.body = message
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "\(type.rawValue)-\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }

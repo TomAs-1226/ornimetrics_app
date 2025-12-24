@@ -3,6 +3,8 @@ import SwiftUI
 struct GalleryView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isRefreshing = false
+    @State private var selectedIndex: Int = 0
+    @State private var showCarousel = false
 
     var body: some View {
         ScrollView {
@@ -26,9 +28,10 @@ struct GalleryView: View {
                         .frame(maxWidth: .infinity)
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)]) {
-                            ForEach(appState.detectionPhotos) { photo in
-                                NavigationLink {
-                                    PhotoDetailView(photo: photo)
+                            ForEach(Array(appState.detectionPhotos.enumerated()), id: \.element.id) { index, photo in
+                                Button {
+                                    selectedIndex = index
+                                    showCarousel = true
                                 } label: {
                                     DetectionPhotoCell(photo: photo)
                                 }
@@ -40,13 +43,16 @@ struct GalleryView: View {
             }
             .padding()
         }
-        .navigationTitle("Gallery")
+        .navigationTitle("Recent")
         .background(
             LinearGradient(colors: [Color.gray.opacity(0.15), Color.mint.opacity(0.05)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
         .refreshable {
             await refresh()
+        }
+        .fullScreenCover(isPresented: $showCarousel) {
+            PhotoCarouselView(photos: appState.detectionPhotos, initialIndex: selectedIndex)
         }
     }
 
@@ -56,6 +62,65 @@ struct GalleryView: View {
         defer { isRefreshing = false }
         await appState.loadDetections()
         Haptics.impact(.light)
+    }
+}
+
+struct PhotoCarouselView: View {
+    let photos: [DetectionPhoto]
+    let initialIndex: Int
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: Int
+
+    init(photos: [DetectionPhoto], initialIndex: Int) {
+        self.photos = photos
+        self.initialIndex = initialIndex
+        self._selection = State(initialValue: initialIndex)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $selection) {
+                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    VStack(spacing: 16) {
+                        AsyncImage(url: URL(string: photo.url)) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .tint(.white)
+                            case let .success(image):
+                                image.resizable().scaledToFit()
+                            case .failure:
+                                Image(systemName: "photo")
+                                    .foregroundStyle(.white)
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                        .frame(maxHeight: 360)
+
+                        Text(photo.species?.replacingOccurrences(of: "_", with: " ") ?? "Unknown species")
+                            .foregroundStyle(.white)
+                            .font(.headline)
+                        Text(photo.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .font(.caption)
+                    }
+                    .padding()
+                    .tag(index)
+                }
+            }
+            .tabViewStyle(.page)
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .padding()
+            }
+        }
     }
 }
 

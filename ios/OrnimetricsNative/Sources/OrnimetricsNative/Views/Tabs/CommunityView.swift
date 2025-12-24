@@ -36,6 +36,9 @@ struct CommunityView: View {
                 .padding()
             }
             .navigationTitle("Community")
+            .refreshable {
+                await appState.loadCommunityFeed()
+            }
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -82,7 +85,7 @@ struct CommunityView: View {
 
                 Button("Post") {
                     let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
+                    guard !trimmed.isEmpty || selectedImageData != nil else { return }
                     Task {
                         let sensors = CommunitySensorTags(lowFood: tagLowFood, clogged: tagClogged, cleaningDue: tagCleaningDue)
                         if let post = await appState.firebaseService.uploadPost(
@@ -251,10 +254,10 @@ private struct CommunityPostDetailView: View {
         messages.append(AiMessage(role: "user", content: trimmed))
         sending = true
         Task {
-            let reply = await appState.appleIntelligenceService.generateReply(
+            let reply = await appState.generateCommunityReply(
                 userMessage: trimmed,
                 post: post,
-                weather: post.weather
+                model: appState.config.openAiApiKey.isEmpty ? "gpt-4o-mini" : (UserDefaults.standard.string(forKey: "pref_ai_model") ?? "gpt-4o-mini")
             )
             messages.append(AiMessage(role: "assistant", content: reply))
             sending = false
