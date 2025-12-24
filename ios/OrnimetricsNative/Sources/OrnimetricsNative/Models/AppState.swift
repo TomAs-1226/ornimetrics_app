@@ -131,16 +131,32 @@ final class AppState: ObservableObject {
                     messages: [OpenAIChatMessage(role: "user", content: prompt)]
                 )
                 aiAnalysis = reply
-                return
             } catch {
                 // fall back to on-device summary
             }
         }
-        aiAnalysis = await appleIntelligenceService.generateDashboardSummary(
+        if aiAnalysis.isEmpty {
+            aiAnalysis = await appleIntelligenceService.generateDashboardSummary(
+                totalDetections: totalDetections,
+                uniqueSpecies: speciesCounts.count,
+                weather: environment
+            )
+        }
+        await generateActionTasks()
+    }
+
+    private func generateActionTasks() async {
+        let newTasks = await appleIntelligenceService.generateActionTasks(
             totalDetections: totalDetections,
             uniqueSpecies: speciesCounts.count,
             weather: environment
         )
+        for task in newTasks {
+            if !tasks.contains(where: { $0.title.lowercased() == task.title.lowercased() && !$0.done }) {
+                tasks.append(task)
+            }
+        }
+        saveTasks()
     }
 
     func generateCommunityReply(userMessage: String, post: CommunityPost, model: String) async -> String {

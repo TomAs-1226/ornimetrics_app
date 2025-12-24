@@ -58,8 +58,19 @@ struct CommunityView: View {
     private var composer: some View {
         GlassCard(title: "New community post", subtitle: "Share a sighting") {
             VStack(alignment: .leading, spacing: 12) {
-                TextField("Write a caption…", text: $caption, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $caption)
+                        .frame(minHeight: 140)
+                        .padding(8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if caption.isEmpty {
+                        Text("Write a caption…")
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                    }
+                }
 
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Label(selectedImageData == nil ? "Add photo" : "Photo selected", systemImage: "photo")
@@ -71,9 +82,12 @@ struct CommunityView: View {
                     }
                 }
 
-                Toggle("Tag low food", isOn: $tagLowFood)
-                Toggle("Tag clogged feeder", isOn: $tagClogged)
-                Toggle("Tag cleaning due", isOn: $tagCleaningDue)
+                WrapHStack(items: [
+                    "Low food", "Clogged", "Cleaning due"
+                ]) { label in
+                    Toggle(label, isOn: bindingForTag(label))
+                        .toggleStyle(.button)
+                }
 
                 Picker("AI model", selection: $aiModel) {
                     Text("GPT-4o Mini").tag("gpt-4o-mini")
@@ -83,7 +97,7 @@ struct CommunityView: View {
                 }
                 .pickerStyle(.menu)
 
-                Button("Post") {
+                Button {
                     let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty || selectedImageData != nil else { return }
                     Task {
@@ -105,6 +119,8 @@ struct CommunityView: View {
                         tagCleaningDue = false
                         Haptics.success()
                     }
+                } label: {
+                    Label("Post update", systemImage: "paperplane.fill")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -148,6 +164,19 @@ struct CommunityView: View {
             }
         }
     }
+
+    private func bindingForTag(_ label: String) -> Binding<Bool> {
+        switch label {
+        case "Low food":
+            return $tagLowFood
+        case "Clogged":
+            return $tagClogged
+        case "Cleaning due":
+            return $tagCleaningDue
+        default:
+            return .constant(false)
+        }
+    }
 }
 
 private struct CommunityPostRow: View {
@@ -165,6 +194,50 @@ private struct CommunityPostRow: View {
             }
             Text(post.caption)
                 .font(.body)
+            #if canImport(UIKit)
+            if let data = post.imageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else if let url = post.imageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        Image(systemName: "photo")
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+                .frame(height: 160)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            #else
+            if let url = post.imageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        Image(systemName: "photo")
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+                .frame(height: 160)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            #endif
             if let weather = post.weather {
                 Text("\(weather.condition) • \(Int(weather.temperatureC))°C")
                     .font(.caption)
@@ -179,7 +252,9 @@ private struct CommunityPostRow: View {
                     .clipShape(Capsule())
             }
         }
-        .padding(.vertical, 6)
+        .padding()
+        .background(mutedTone(for: post))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func tagLabels(from post: CommunityPost) -> [String] {
@@ -188,6 +263,19 @@ private struct CommunityPostRow: View {
         if post.sensors.clogged { tags.append("Clogged") }
         if post.sensors.cleaningDue { tags.append("Cleaning due") }
         return tags
+    }
+
+    private func mutedTone(for post: CommunityPost) -> Color {
+        let palette: [Color] = [
+            Color.green.opacity(0.15),
+            Color.blue.opacity(0.12),
+            Color.orange.opacity(0.14),
+            Color.purple.opacity(0.12),
+            Color.teal.opacity(0.12),
+            Color.pink.opacity(0.12)
+        ]
+        let hash = abs(post.id.hashValue)
+        return palette[hash % palette.count]
     }
 }
 

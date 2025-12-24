@@ -12,6 +12,7 @@ struct DashboardView: View {
     @State private var showAddTask = false
     @State private var newTaskTitle = ""
     @State private var showAllTrends = false
+    @State private var showHourlyDetail = false
 
     init(notifications: NotificationsCenter) {
         self.notifications = notifications
@@ -56,17 +57,24 @@ struct DashboardView: View {
         .sheet(isPresented: $showAllTrends) {
             TrendsSheet(trends: appState.trendSignals)
         }
-        .alert("New Task", isPresented: $showAddTask) {
-            TextField("Describe the action", text: $newTaskTitle)
-            Button("Cancel", role: .cancel) {
-                newTaskTitle = ""
-            }
-            Button("Add") {
-                let title = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { return }
-                appState.addTask(EcoTask(title: title, category: "user", priority: 2, source: "user"))
-                newTaskTitle = ""
-            }
+        .sheet(isPresented: $showAddTask) {
+            NewTaskSheet(
+                title: $newTaskTitle,
+                onSave: {
+                    let title = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !title.isEmpty else { return }
+                    appState.addTask(EcoTask(title: title, category: "user", priority: 2, source: "user"))
+                    newTaskTitle = ""
+                    showAddTask = false
+                },
+                onCancel: {
+                    newTaskTitle = ""
+                    showAddTask = false
+                }
+            )
+        }
+        .sheet(isPresented: $showHourlyDetail) {
+            HourlyActivityDetailSheet(photos: appState.detectionPhotos)
         }
     }
 
@@ -170,10 +178,11 @@ struct DashboardView: View {
                 StatCard(
                     title: "Total Detections",
                     value: "\(appState.totalDetections)",
-                    systemImage: "track_changes",
+                    systemImage: "magnifyingglass",
                     copyText: "Total detections: \(appState.totalDetections)"
                 )
             }
+            .frame(maxWidth: .infinity)
             .buttonStyle(.plain)
 
             NavigationLink {
@@ -187,6 +196,7 @@ struct DashboardView: View {
                     copyText: "Unique species: \(speciesList)"
                 )
             }
+            .frame(maxWidth: .infinity)
             .buttonStyle(.plain)
         }
     }
@@ -238,6 +248,10 @@ struct DashboardView: View {
     private var hourlyActivityCard: some View {
         GlassCard(title: "Hourly Activity", subtitle: "Time of day distribution") {
             HourlyActivityChart(photos: appState.detectionPhotos)
+            Button("View hourly details") {
+                showHourlyDetail = true
+            }
+            .buttonStyle(.bordered)
         }
     }
 
@@ -254,7 +268,7 @@ struct DashboardView: View {
                 Button {
                     showAddTask = true
                 } label: {
-                    Image(systemName: "plus.circle.fill")
+                    Label("Add task", systemImage: "plus.circle.fill")
                 }
             }
             if top.isEmpty {
@@ -301,6 +315,17 @@ struct DashboardView: View {
     private var trendsCard: some View {
         let trends = appState.trendSignals.prefix(4)
         return GlassCard(title: "Recent Trends", subtitle: "Last 7 days vs prior") {
+            if appState.trendRollup.hasAnyData {
+                HStack {
+                    Text("\(appState.trendRollup.recentTotal) detections in last 7d")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(appState.trendRollup.pctLabel)
+                        .font(.caption.bold())
+                        .foregroundStyle(appState.trendRollup.direction == "rising" ? .green : appState.trendRollup.direction == "falling" ? .red : .secondary)
+                }
+            }
             if trends.isEmpty {
                 Text("No recent changes to report.")
                     .foregroundStyle(.secondary)
@@ -316,6 +341,7 @@ struct DashboardView: View {
             }
             .buttonStyle(.bordered)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var aiAnalysisCard: some View {
@@ -359,6 +385,7 @@ private struct StatCard: View {
                     .foregroundStyle(.mint)
             }
         }
+        .frame(minHeight: 130)
         .contextMenu {
             if let copyText {
                 Button("Copy") {
@@ -623,6 +650,80 @@ private struct BiodiversityMetric: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let value: Double
+}
+
+private struct HourlyActivityDetailSheet: View {
+    let photos: [DetectionPhoto]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(hourlyRows) { row in
+                HStack {
+                    Text("\(row.hour)h")
+                        .frame(width: 40, alignment: .leading)
+                    ProgressView(value: Double(row.count), total: Double(maxCount))
+                        .tint(.mint)
+                    Text("\(row.count)")
+                        .frame(width: 40, alignment: .trailing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Hourly Activity")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var hourlyRows: [HourlyEntry] {
+        var counts = Array(repeating: 0, count: 24)
+        let calendar = Calendar.current
+        for photo in photos {
+            let hour = calendar.component(.hour, from: photo.timestamp)
+            if hour >= 0 && hour < 24 {
+                counts[hour] += 1
+            }
+        }
+        return counts.enumerated().map { HourlyEntry(hour: $0.offset, count: $0.element) }
+    }
+
+    private var maxCount: Int {
+        hourlyRows.map(\.count).max() ?? 1
+    }
+}
+
+private struct NewTaskSheet: View {
+    @Binding var title: String
+    var onSave: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Create a new task")
+                    .font(.title2.bold())
+                TextField("Describe the action", text: $title, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minHeight: 120)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("New Task")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Save") { onSave() }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
 }
 
 private struct TrendsSheet: View {

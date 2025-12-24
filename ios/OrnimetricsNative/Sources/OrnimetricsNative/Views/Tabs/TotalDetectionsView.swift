@@ -32,6 +32,29 @@ struct TotalDetectionsView: View {
                 .pickerStyle(.segmented)
 
                 chartSection
+
+                if !filteredItems().isEmpty {
+                    GlassCard(title: "Breakdown", subtitle: "Filtered results") {
+                        VStack(spacing: 10) {
+                            ForEach(filteredItems(), id: \.0) { item in
+                                HStack {
+                                    Text(item.0.replacingOccurrences(of: "_", with: " "))
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text(valueLabel(count: item.1))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Divider()
+                            }
+                        }
+                    }
+                } else {
+                    GlassCard(title: "Breakdown") {
+                        Text("No results match the current filters.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding()
         }
@@ -68,7 +91,8 @@ struct TotalDetectionsView: View {
                 Text("Min count: \(Int(minCountFilter))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Slider(value: $minCountFilter, in: 0...Double(max(1, total)), step: max(1, Double(total) / 10))
+                let maxValue = max(1, total)
+                Slider(value: $minCountFilter, in: 0...Double(maxValue), step: max(1, Double(maxValue) / 10))
             }
         }
     }
