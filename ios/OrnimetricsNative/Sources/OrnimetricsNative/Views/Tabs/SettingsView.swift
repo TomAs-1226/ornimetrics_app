@@ -23,7 +23,7 @@ struct SettingsView: View {
                             appState.updateAccentColor(hex: color.hex)
                         } label: {
                             Circle()
-                                .fill(color.swiftUIColor)
+                                .fill(Color(hex: color.hex) ?? .mint)
                                 .frame(width: 28, height: 28)
                                 .overlay(
                                     Circle()
@@ -140,13 +140,13 @@ struct SettingsView: View {
 
     private var accentChoices: [AccentChoice] {
         [
-            AccentChoice(hex: "#2ECC71", swiftUIColor: .green),
-            AccentChoice(hex: "#F39C12", swiftUIColor: .orange),
-            AccentChoice(hex: "#1ABC9C", swiftUIColor: .teal),
-            AccentChoice(hex: "#8E44AD", swiftUIColor: .purple),
-            AccentChoice(hex: "#E91E63", swiftUIColor: .pink),
-            AccentChoice(hex: "#3498DB", swiftUIColor: .blue),
-            AccentChoice(hex: "#607D8B", swiftUIColor: .blue.opacity(0.6))
+            AccentChoice(hex: "#2ECC71"),
+            AccentChoice(hex: "#F39C12"),
+            AccentChoice(hex: "#1ABC9C"),
+            AccentChoice(hex: "#8E44AD"),
+            AccentChoice(hex: "#E91E63"),
+            AccentChoice(hex: "#3498DB"),
+            AccentChoice(hex: "#607D8B")
         ]
     }
 }
@@ -170,5 +170,4 @@ struct ConfigRow: View {
 
 private struct AccentChoice: Hashable {
     let hex: String
-    let swiftUIColor: Color
 }

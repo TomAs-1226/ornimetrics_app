@@ -213,14 +213,15 @@ struct DashboardView: View {
             let hMax = s > 0 ? log(Double(s)) : 0
             let evenness = (s > 1 && hMax > 0) ? (shannon / hMax) : 0
 
+            let metrics: [BiodiversityMetric] = [
+                BiodiversityMetric(title: "Shannon Diversity Index (H')", value: shannon),
+                BiodiversityMetric(title: "Gini–Simpson Index (1−D)", value: simpson),
+                BiodiversityMetric(title: "Pielou Evenness (J')", value: evenness)
+            ]
             GlassCard(title: "Species Diversity Metrics", subtitle: "Hold to copy") {
-                WrapHStack(items: [
-                    ("Shannon Diversity Index (H')", shannon),
-                    ("Gini–Simpson Index (1−D)", simpson),
-                    ("Pielou Evenness (J')", evenness)
-                ]) { item in
-                    let value = item.1.isFinite ? String(format: "%.2f", item.1) : "—"
-                    InfoPill(title: item.0, value: value)
+                WrapHStack(items: metrics) { item in
+                    let value = item.value.isFinite ? String(format: "%.2f", item.value) : "—"
+                    InfoPill(title: item.title, value: value)
                 }
             }
             .contextMenu {
@@ -616,6 +617,12 @@ private struct TrendRow: View {
                 .foregroundStyle(.secondary)
         }
     }
+}
+
+private struct BiodiversityMetric: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let value: Double
 }
 
 private struct TrendsSheet: View {

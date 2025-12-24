@@ -3,7 +3,7 @@ import SwiftUI
 
 struct SpeciesView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedSpecies: String?
+    @State private var selectedSpecies: IdentifiedSpecies?
 
     var body: some View {
         ScrollView {
@@ -21,7 +21,7 @@ struct SpeciesView: View {
         )
         .sheet(item: $selectedSpecies) { species in
             NavigationStack {
-                SpeciesDetailView(speciesKey: species)
+                SpeciesDetailView(speciesKey: species.name)
                     .environmentObject(appState)
             }
         }
@@ -98,7 +98,7 @@ struct SpeciesView: View {
             ForEach(entries, id: \.key) { species, count in
                 let percent = Double(count) / Double(total)
                 Button {
-                    selectedSpecies = species
+                    selectedSpecies = IdentifiedSpecies(name: species)
                 } label: {
                     SpeciesRowCard(
                         species: species,
@@ -120,6 +120,11 @@ struct SpeciesView: View {
             species.replacingOccurrences(of: "-", with: "_").lowercased()
         }
     }
+}
+
+private struct IdentifiedSpecies: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
 }
 
 private struct SpeciesRowCard: View {
