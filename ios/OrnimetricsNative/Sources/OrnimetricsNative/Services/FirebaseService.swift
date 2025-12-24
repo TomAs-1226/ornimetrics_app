@@ -12,16 +12,29 @@ struct FirebaseService {
         return [CommunityPost.sample]
     }
 
-    func uploadPost(body: String, photoData: Data?) async -> CommunityPost? {
+    func uploadPost(caption: String, photoData: Data?, weather: WeatherSnapshot?, sensors: CommunitySensorTags, model: String) async -> CommunityPost? {
         return CommunityPost(
             id: UUID().uuidString,
             author: "You",
-            body: body,
+            caption: caption,
             createdAt: Date(),
-            photoURL: nil,
-            weather: "Clear",
-            humidity: 46,
-            sensorTags: ["Manual upload"]
+            imageURL: nil,
+            imageData: photoData,
+            weather: weather,
+            timeOfDayTag: timeOfDayLabel(for: Date()),
+            model: model,
+            sensors: sensors
         )
+    }
+
+    private func timeOfDayLabel(for date: Date) -> String {
+        let hour = Calendar.current.component(.hour, from: date)
+        switch hour {
+        case 5..<11: return "Morning"
+        case 11..<15: return "Midday"
+        case 15..<19: return "Afternoon"
+        case 19..<22: return "Dusk"
+        default: return "Night"
+        }
     }
 }

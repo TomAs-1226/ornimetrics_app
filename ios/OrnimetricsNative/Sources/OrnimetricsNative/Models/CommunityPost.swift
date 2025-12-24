@@ -1,23 +1,33 @@
 import Foundation
 
-struct CommunityPost: Identifiable {
+struct CommunitySensorTags: Hashable, Codable {
+    var lowFood: Bool
+    var clogged: Bool
+    var cleaningDue: Bool
+}
+
+struct CommunityPost: Identifiable, Hashable {
     let id: String
     let author: String
-    let body: String
+    let caption: String
     let createdAt: Date
-    let photoURL: URL?
-    let weather: String
-    let humidity: Int
-    let sensorTags: [String]
+    let imageURL: URL?
+    let imageData: Data?
+    let weather: WeatherSnapshot?
+    let timeOfDayTag: String
+    let model: String
+    let sensors: CommunitySensorTags
 
     static let sample = CommunityPost(
         id: UUID().uuidString,
         author: "Community Member",
-        body: "Spotted a family of finches around the feeder at dusk. Food level holding steady and the humidity stayed below threshold.",
+        caption: "Spotted a family of finches around the feeder at dusk. Food level holding steady and the humidity stayed below threshold.",
         createdAt: Date().addingTimeInterval(-3600),
-        photoURL: nil,
-        weather: "Partly Cloudy",
-        humidity: 52,
-        sensorTags: ["Low feeder traffic", "Evening", "North wind"]
+        imageURL: nil,
+        imageData: nil,
+        weather: .placeholder,
+        timeOfDayTag: "Dusk",
+        model: "gpt-4o-mini",
+        sensors: CommunitySensorTags(lowFood: false, clogged: false, cleaningDue: true)
     )
 }

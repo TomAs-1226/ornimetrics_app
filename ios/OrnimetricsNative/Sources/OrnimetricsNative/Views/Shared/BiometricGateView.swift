@@ -3,10 +3,11 @@ import SwiftUI
 
 struct BiometricGateView<Content: View>: View {
     let content: Content
-    @State private var isUnlocked = false
+    @Binding var isUnlocked: Bool
     @State private var errorMessage: String?
 
-    init(@ViewBuilder content: () -> Content) {
+    init(isUnlocked: Binding<Bool>, @ViewBuilder content: () -> Content) {
+        self._isUnlocked = isUnlocked
         self.content = content()
     }
 
@@ -20,7 +21,7 @@ struct BiometricGateView<Content: View>: View {
                         .font(.system(size: 42))
                     Text("Unlock Community Center")
                         .font(.title2.bold())
-                    Text("Use Face ID to protect community posts and biometrics.")
+                    Text("Use Face ID or your device passcode to protect community posts and biometrics.")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                     if let errorMessage {
@@ -28,7 +29,7 @@ struct BiometricGateView<Content: View>: View {
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
-                    Button("Use Face ID") {
+                    Button("Unlock") {
                         Task {
                             await authenticate()
                         }
@@ -39,8 +40,10 @@ struct BiometricGateView<Content: View>: View {
             }
         }
         .onAppear {
-            Task {
-                await authenticate()
+            if !isUnlocked {
+                Task {
+                    await authenticate()
+                }
             }
         }
     }
@@ -49,12 +52,12 @@ struct BiometricGateView<Content: View>: View {
     private func authenticate() async {
         let context = LAContext()
         var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            errorMessage = "Face ID is not available on this device."
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            errorMessage = "Device authentication is not available on this device."
             return
         }
         do {
-            let success = try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,
+            let success = try await context.evaluatePolicy(.deviceOwnerAuthentication,
                                                           localizedReason: "Access the community center")
             if success {
                 isUnlocked = true

@@ -3,10 +3,17 @@ import SwiftUI
 struct EnvironmentView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isRefreshing = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                if let errorMessage {
+                    GlassCard(title: "Could not load weather") {
+                        Text(errorMessage)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 GlassCard(title: "Live weather", subtitle: appState.environment.locationName) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(Int(appState.environment.temperatureC))°C")
@@ -34,6 +41,24 @@ struct EnvironmentView: View {
                     WeatherMetricCard(title: "Precip Chance", value: "\(Int((appState.environment.precipitationChance ?? 0) * 100))%")
                 }
 
+                GlassCard(title: "Provider", subtitle: "Location status") {
+                    HStack {
+                        Image(systemName: "location.fill")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Location secured")
+                                .font(.headline)
+                            Text("Using current GPS coordinates for weather + history.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Request access") {
+                            Haptics.impact(.light)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
                 GlassCard(title: "Historical context", subtitle: "From tagged photos") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("View the weather conditions attached to every photo in your gallery and community posts.")
@@ -56,6 +81,11 @@ struct EnvironmentView: View {
         .refreshable {
             await refresh()
         }
+        .onAppear {
+            if appState.config.weatherApiKey.isEmpty {
+                errorMessage = "Weather API key is missing. Add WEATHER_API_KEY to load live conditions."
+            }
+        }
     }
 
     private func refresh() async {
@@ -63,6 +93,9 @@ struct EnvironmentView: View {
         isRefreshing = true
         defer { isRefreshing = false }
         await appState.refreshEnvironment()
+        errorMessage = appState.config.weatherApiKey.isEmpty
+            ? "Weather API key is missing. Add WEATHER_API_KEY to load live conditions."
+            : nil
         Haptics.impact(.light)
     }
 }

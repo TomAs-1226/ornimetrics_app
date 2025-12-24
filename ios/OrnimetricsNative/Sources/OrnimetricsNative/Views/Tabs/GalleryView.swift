@@ -2,14 +2,28 @@ import SwiftUI
 
 struct GalleryView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var isRefreshing = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 GlassCard(title: "Detection Gallery", subtitle: "Recent snapshots") {
                     if appState.detectionPhotos.isEmpty {
-                        Text("No detections yet.")
-                            .foregroundStyle(.secondary)
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.largeTitle)
+                            Text("No snapshots yet.")
+                                .font(.headline)
+                            Text("When your device uploads images to the photo_snapshots feed, they will appear here.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            if let checked = appState.lastUpdated {
+                                Text("Checked: \(checked.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)]) {
                             ForEach(appState.detectionPhotos) { photo in
@@ -31,6 +45,17 @@ struct GalleryView: View {
             LinearGradient(colors: [Color.gray.opacity(0.15), Color.mint.opacity(0.05)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
+        .refreshable {
+            await refresh()
+        }
+    }
+
+    private func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        await appState.loadDetections()
+        Haptics.impact(.light)
     }
 }
 

@@ -12,6 +12,7 @@ enum Haptics {
 
     @MainActor
     static func success() {
+        guard isEnabled else { return }
         #if canImport(UIKit)
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
@@ -25,6 +26,7 @@ enum Haptics {
 
     @MainActor
     static func warning() {
+        guard isEnabled else { return }
         #if canImport(UIKit)
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
@@ -38,6 +40,7 @@ enum Haptics {
 
     @MainActor
     static func impact(_ style: ImpactStyle = .medium) {
+        guard isEnabled else { return }
         #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: style.uiKitStyle)
         generator.prepare()
@@ -54,6 +57,10 @@ enum Haptics {
 extension Haptics {
     enum ImpactStyle: Sendable {
         case light, medium, heavy, soft, rigid
+    }
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "pref_haptics_enabled") as? Bool ?? true
     }
 }
 

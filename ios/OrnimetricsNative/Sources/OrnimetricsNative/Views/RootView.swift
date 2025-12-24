@@ -16,7 +16,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .dashboard: return "Dashboard"
         case .environment: return "Environment"
         case .community: return "Community"
-        case .gallery: return "Gallery"
+        case .gallery: return "Recent"
         case .species: return "Species"
         case .notifications: return "Notifications"
         case .settings: return "Settings"
@@ -37,11 +37,13 @@ enum AppSection: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @AppStorage("pref_dark_mode") private var darkMode = false
     @State private var selection: AppSection = .dashboard
 
     // Tabs you want on compact width (phone). You can add .gallery/.species if you want them as tabs too.
-    private let tabSections: [AppSection] = [.dashboard, .environment, .community, .notifications, .settings]
+    private let tabSections: [AppSection] = [.dashboard, .gallery, .environment, .community, .notifications, .settings]
 
     var body: some View {
         Group {
@@ -68,7 +70,8 @@ struct RootView: View {
                 }
             }
         }
-        .applyMintTintCompat()
+        .applyTintCompat(color: Color(hex: appState.accentColorHex) ?? .mint)
+        .preferredColorScheme(darkMode ? .dark : .light)
     }
 
     // MARK: - Sidebar (iPad)
@@ -98,7 +101,7 @@ struct RootView: View {
     private func detailView(for section: AppSection) -> some View {
         switch section {
         case .dashboard:
-            DashboardView()
+            DashboardView(notifications: appState.notificationsCenter)
         case .environment:
             EnvironmentView()
         case .community:
@@ -108,7 +111,7 @@ struct RootView: View {
         case .species:
             SpeciesView()
         case .notifications:
-            NotificationsView()
+            NotificationsView(notifications: appState.notificationsCenter)
         case .settings:
             SettingsView()
         }
@@ -132,11 +135,11 @@ private struct NavigationContainer<Content: View>: View {
 // MARK: - Tint compatibility
 private extension View {
     @ViewBuilder
-    func applyMintTintCompat() -> some View {
+    func applyTintCompat(color: Color) -> some View {
         if #available(iOS 15.0, *) {
-            self.tint(.mint)
+            self.tint(color)
         } else {
-            self.accentColor(.mint)
+            self.accentColor(color)
         }
     }
 }
