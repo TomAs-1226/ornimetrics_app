@@ -40,6 +40,7 @@ struct SettingsView: View {
                     ConfigRow(label: "Firebase database", value: appState.config.firebaseDatabaseUrl)
                     ConfigRow(label: "Weather endpoint", value: appState.config.weatherEndpoint)
                     ConfigRow(label: "Weather API key", value: masked(appState.config.weatherApiKey))
+                    ConfigRow(label: "OpenAI API key", value: masked(appState.config.openAiApiKey))
                 }
 
                 GlassCard(title: "Feedback") {
