@@ -87,6 +87,12 @@ post_install do |installer|
   installer.aggregate_targets.each do |aggregate|
     strip_flag_from_xcconfig(aggregate.xcconfig_path, 'G')
     aggregate.user_project.targets.each do |target|
+      target.shell_script_build_phases.each do |phase|
+        next unless phase.name&.include?('Pods-Runner') || phase.name&.include?('Embed Pods') || phase.name&.include?('Copy Pods')
+
+        phase.input_file_list_paths = []
+        phase.output_file_list_paths = []
+      end
       target.build_configurations.each do |config|
         config.build_settings['USE_FILELISTS'] = 'NO'
       end
