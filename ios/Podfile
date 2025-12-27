@@ -86,6 +86,11 @@ post_install do |installer|
 
   installer.aggregate_targets.each do |aggregate|
     strip_flag_from_xcconfig(aggregate.xcconfig_path, 'G')
+    aggregate.user_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['USE_FILELISTS'] = 'NO'
+      end
+    end
   end
 
   installer.generated_projects.each do |project|
