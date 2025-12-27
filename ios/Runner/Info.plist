@@ -51,5 +51,11 @@
 		<string>We use your location to attach accurate weather history to detections.</string>
 		<key>NSFaceIDUsageDescription</key>
 		<string>Face ID/Touch ID lets you quickly unlock posting and sensitive features.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>We use the camera to capture photos for community posts.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>We use your photo library to attach photos to community posts.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>We save exported community images to your photo library when you choose to share them.</string>
 	</dict>
 </plist>
