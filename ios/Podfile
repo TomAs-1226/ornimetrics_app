@@ -49,14 +49,11 @@ post_install do |installer|
     end
   end
 
-  installer.pods_project.targets.each do |target|
-    flutter_additional_ios_build_settings(target)
+  def sanitize_build_settings!(config, flag)
+    config.build_settings.each do |key, value|
+      next unless value.is_a?(String) || value.is_a?(Array)
 
-    target.build_configurations.each do |config|
-      config.build_settings['OTHER_CFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_CFLAGS'], '-G')
-      config.build_settings['OTHER_CPLUSPLUSFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_CPLUSPLUSFLAGS'], '-G')
-      config.build_settings['OTHER_LDFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_LDFLAGS'], '-G')
-      config.build_settings['OTHER_SWIFT_FLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_SWIFT_FLAGS'], '-G')
+      config.build_settings[key] = strip_unsupported_flag(value, flag)
     end
   end
 
@@ -65,17 +62,36 @@ post_install do |installer|
 
     contents = File.read(path)
     updated_lines = contents.each_line.map do |line|
-      parts = line.split(/\s+/)
-      next line if parts.empty?
+      stripped = line.lstrip
+      next line if stripped.start_with?('//') || stripped.start_with?('#')
 
-      cleaned = parts.reject { |value| value == "-#{flag}" || value.start_with?("-#{flag}") }
-      cleaned.empty? ? "" : cleaned.join(' ') + "\n"
+      updated = line.gsub(/(^|\s)-#{Regexp.escape(flag)}(\s|$)/, ' ')
+      updated.gsub(/\s+/, ' ')
     end
     updated = updated_lines.join
     File.write(path, updated) if updated != contents
   end
 
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      sanitize_build_settings!(config, '-G')
+      strip_flag_from_xcconfig(config.base_configuration_reference&.real_path, 'G')
+    end
+  end
+
   installer.aggregate_targets.each do |aggregate|
     strip_flag_from_xcconfig(aggregate.xcconfig_path, 'G')
   end
+
+  installer.generated_projects.each do |project|
+    project.targets.each do |target|
+      target.build_configurations.each do |config|
+        sanitize_build_settings!(config, '-G')
+        strip_flag_from_xcconfig(config.base_configuration_reference&.real_path, 'G')
+      end
+    end
+  end
+end
 end
