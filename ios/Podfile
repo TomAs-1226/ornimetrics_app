@@ -80,6 +80,7 @@ post_install do |installer|
     target.build_configurations.each do |config|
       sanitize_build_settings!(config, '-G')
       strip_flag_from_xcconfig(config.base_configuration_reference&.real_path, 'G')
+      config.build_settings['USE_FILELISTS'] = 'NO'
     end
   end
 
@@ -92,6 +93,7 @@ post_install do |installer|
       target.build_configurations.each do |config|
         sanitize_build_settings!(config, '-G')
         strip_flag_from_xcconfig(config.base_configuration_reference&.real_path, 'G')
+        config.build_settings['USE_FILELISTS'] = 'NO'
       end
     end
   end
