@@ -55,6 +55,27 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['OTHER_CFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_CFLAGS'], '-G')
       config.build_settings['OTHER_CPLUSPLUSFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_CPLUSPLUSFLAGS'], '-G')
+      config.build_settings['OTHER_LDFLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_LDFLAGS'], '-G')
+      config.build_settings['OTHER_SWIFT_FLAGS'] = strip_unsupported_flag(config.build_settings['OTHER_SWIFT_FLAGS'], '-G')
     end
+  end
+
+  def strip_flag_from_xcconfig(path, flag)
+    return unless path && File.exist?(path)
+
+    contents = File.read(path)
+    updated_lines = contents.each_line.map do |line|
+      parts = line.split(/\s+/)
+      next line if parts.empty?
+
+      cleaned = parts.reject { |value| value == "-#{flag}" || value.start_with?("-#{flag}") }
+      cleaned.empty? ? "" : cleaned.join(' ') + "\n"
+    end
+    updated = updated_lines.join
+    File.write(path, updated) if updated != contents
+  end
+
+  installer.aggregate_targets.each do |aggregate|
+    strip_flag_from_xcconfig(aggregate.xcconfig_path, 'G')
   end
 end
