@@ -53,22 +53,44 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
+      # Ensure all pods use iOS 13.0 minimum deployment target
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+
       # On newer Xcodes, filelists can point at stale/absolute paths and break builds.
       config.build_settings['USE_FILELISTS'] = 'NO'
 
-      # Some pods (or generated xcconfigs) can pick up an unsupported `-G` flag.
+      # Exclude arm64 for simulator to avoid architecture issues on Intel Macs
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64' if config.build_settings['SDKROOT'] == 'iphonesimulator'
+
+      # Some pods (especially BoringSSL-GRPC) can pick up an unsupported `-G` flag.
       # Strip it everywhere to keep simulator builds working.
-      %w[OTHER_CFLAGS OTHER_CPLUSPLUSFLAGS OTHER_SWIFT_FLAGS].each do |key|
+      %w[OTHER_CFLAGS OTHER_CPLUSPLUSFLAGS OTHER_SWIFT_FLAGS OTHER_LDFLAGS].each do |key|
         v = config.build_settings[key]
         next if v.nil?
 
         if v.is_a?(String)
-          flags = v.split(' ').reject { |f| f == '-G' || f.start_with?('-G') }
-          config.build_settings[key] = flags.join(' ')
+          # Remove -G flag and any flag starting with -G
+          cleaned = v.gsub(/\s*-G\S*/, '').gsub(/\s+/, ' ').strip
+          config.build_settings[key] = cleaned
         elsif v.is_a?(Array)
-          config.build_settings[key] = v.reject { |f| f == '-G' || (f.respond_to?(:start_with?) && f.start_with?('-G')) }
+          config.build_settings[key] = v.reject { |f| f.to_s == '-G' || f.to_s.start_with?('-G') }
         end
       end
+    end
+  end
+
+  # Also fix the xcconfig files directly for BoringSSL-GRPC
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+  end
+
+  # Remove -G from generated xcconfig files
+  xcconfig_path = installer.sandbox.root.to_s + '/Target Support Files'
+  Dir.glob("#{xcconfig_path}/**/*.xcconfig").each do |xcconfig|
+    content = File.read(xcconfig)
+    if content.include?('-G')
+      new_content = content.gsub(/\s*-G\S*/, '')
+      File.write(xcconfig, new_content)
     end
   end
 end
