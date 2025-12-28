@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "315730159319",
+    "project_id": "ornimetrics",
+    "storage_bucket": "ornimetrics.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:315730159319:android:2470c4aa46fc2a728ef292",
+        "android_client_info": {
+          "package_name": "com.example.ornimetrics_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-enS2wsxnHg_hn6W94qYiY8i2Vi05KOU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
