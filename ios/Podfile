@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-# platform :ios, '12.0'
+platform :ios, '18.6'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -28,9 +28,21 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  # FlutterFire pulls in Swift pods. Static frameworks are generally the least painful option.
+  use_frameworks! :linkage => :static
+
+  # IMPORTANT: do NOT enable `use_modular_headers!` globally.
+  # It can break header resolution in some pod targets.
+  # Only opt-in modular headers for the pods that need module maps under static linkage.
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'GoogleUtilities/Environment', :modular_headers => true
+  pod 'GoogleUtilities/UserDefaults', :modular_headers => true
+  pod 'GoogleUtilities/Network', :modular_headers => true
+  pod 'GoogleUtilities/AppDelegateSwizzler', :modular_headers => true
+  pod 'GoogleUtilities/Reachability', :modular_headers => true
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
@@ -39,5 +51,24 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # On newer Xcodes, filelists can point at stale/absolute paths and break builds.
+      config.build_settings['USE_FILELISTS'] = 'NO'
+
+      # Some pods (or generated xcconfigs) can pick up an unsupported `-G` flag.
+      # Strip it everywhere to keep simulator builds working.
+      %w[OTHER_CFLAGS OTHER_CPLUSPLUSFLAGS OTHER_SWIFT_FLAGS].each do |key|
+        v = config.build_settings[key]
+        next if v.nil?
+
+        if v.is_a?(String)
+          flags = v.split(' ').reject { |f| f == '-G' || f.start_with?('-G') }
+          config.build_settings[key] = flags.join(' ')
+        elsif v.is_a?(Array)
+          config.build_settings[key] = v.reject { |f| f == '-G' || (f.respond_to?(:start_with?) && f.start_with?('-G')) }
+        end
+      end
+    end
   end
 end
