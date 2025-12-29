@@ -1,0 +1,194 @@
+MIT License
+
+Copyright (c) 2024 Thomas Yu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+THIRD-PARTY LICENSES
+
+This software incorporates components from the following open source projects:
+
+--------------------------------------------------------------------------------
+
+Flutter SDK
+https://flutter.dev
+Copyright 2014 The Flutter Authors. All rights reserved.
+BSD 3-Clause License
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+    * Neither the name of Google Inc. nor the names of its
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+
+Firebase Flutter Plugins
+https://firebase.flutter.dev
+Copyright 2017 The Chromium Authors. All rights reserved.
+BSD 3-Clause License
+
+--------------------------------------------------------------------------------
+
+Geolocator
+https://pub.dev/packages/geolocator
+Copyright (c) 2018 Baseflow
+MIT License
+
+--------------------------------------------------------------------------------
+
+Image Picker
+https://pub.dev/packages/image_picker
+Copyright 2013 The Flutter Authors. All rights reserved.
+BSD 3-Clause License
+
+--------------------------------------------------------------------------------
+
+HTTP Package
+https://pub.dev/packages/http
+Copyright 2014, the Dart project authors. All rights reserved.
+BSD 3-Clause License
+
+--------------------------------------------------------------------------------
+
+Shared Preferences
+https://pub.dev/packages/shared_preferences
+Copyright 2013 The Flutter Authors. All rights reserved.
+BSD 3-Clause License
+
+--------------------------------------------------------------------------------
+
+Intl Package
+https://pub.dev/packages/intl
+Copyright 2013, the Dart project authors. All rights reserved.
+BSD 3-Clause License
+
+--------------------------------------------------------------------------------
+
+Pie Chart
+https://pub.dev/packages/pie_chart
+Copyright (c) 2019 Akshit Khurana
+MIT License
+
+--------------------------------------------------------------------------------
+
+Flutter Dotenv
+https://pub.dev/packages/flutter_dotenv
+Copyright (c) 2018 java-james
+MIT License
+
+--------------------------------------------------------------------------------
+
+File Selector
+https://pub.dev/packages/file_selector
+Copyright 2013 The Flutter Authors. All rights reserved.
+BSD 3-Clause License
+
+================================================================================
+
+ADDITIONAL NOTICES
+
+Firebase Services
+This application uses Firebase services provided by Google LLC.
+Firebase is subject to Google's Terms of Service and Privacy Policy.
+https://firebase.google.com/terms
+https://policies.google.com/privacy
+
+OpenAI API
+This application integrates with OpenAI's API for AI-powered features.
+OpenAI API usage is subject to OpenAI's Terms of Use and Privacy Policy.
+https://openai.com/terms
+https://openai.com/privacy
+
+Weather Data
+Weather data may be provided by third-party weather services.
+Usage is subject to the respective service's terms and conditions.
+
+================================================================================
+
+PRIVACY NOTICE
+
+This application collects and processes user data as described in the
+application's Privacy Policy and Terms of Service. By using this application,
+you agree to the collection and use of information in accordance with these
+policies.
+
+Data collected may include:
+- Bird detection and observation data
+- Location information (with user permission)
+- Photos and images (with user permission)
+- Usage analytics (anonymized)
+
+Users have the right to:
+- Access their data
+- Export their data
+- Request data deletion
+- Opt out of data sharing programs
+
+For more information, see the Privacy Policy section in the application
+settings or visit the project's GitHub repository.
+
+================================================================================
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. THE AUTHORS AND COPYRIGHT HOLDERS SHALL NOT BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
+
+Bird identification results provided by AI are for informational purposes only
+and may not be 100% accurate. Users should verify identifications through
+additional sources when accuracy is critical.
+
+Weather data and forecasts are provided by third-party services and may not
+always be accurate. Users should consult official weather sources for
+critical decisions.
+
+================================================================================
+
+CONTACT
+
+For questions about this license or the use of this software:
+
+GitHub: https://github.com/TomAs-1226/ornimetrics_app
+Issues: https://github.com/TomAs-1226/ornimetrics_app/issues
+
+================================================================================
+
+Last updated: December 2024
