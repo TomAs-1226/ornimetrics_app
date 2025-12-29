@@ -4,11 +4,11 @@ import SwiftUI
 @main
 struct OrnimetricsWidgetBundle: WidgetBundle {
     var body: some Widget {
-        DetectionCounterWidget()
-        SpeciesSpotlightWidget()
+        DetectionStatsWidget()
+        DiversityWidget()
+        ActivityTimelineWidget()
+        TrendsWidget()
+        CommunityWidget()
         QuickGlanceWidget()
-        ActivityRingWidget()
-        NatureCardWidget()
-        CompactStatsWidget()
     }
 }
