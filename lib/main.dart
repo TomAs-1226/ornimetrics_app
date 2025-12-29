@@ -5719,6 +5719,19 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
+  Widget _buildInfoRow(BuildContext context, IconData icon, String label, String value) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant)),
+        const Spacer(),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
   void _showEasterEgg() {
     showGeneralDialog(
       context: context,
