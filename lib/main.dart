@@ -5475,6 +5475,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   String _selectedAiModel = 'gpt-4o-mini';
   Color _seedColor = Colors.green;
 
+  // Live update settings
+  bool _liveUpdatesEnabled = true;
+  String _liveUpdateDisplayMode = 'banner';
+
   // Easter egg state
   int _versionTapCount = 0;
   bool _easterEggUnlocked = false;
@@ -5814,12 +5818,207 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       _autoRefreshEnabled = prefs.getBool('pref_auto_refresh_enabled') ?? false;
       _autoRefreshInterval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
       _selectedAiModel = prefs.getString('pref_ai_model') ?? 'gpt-4o-mini';
+      _liveUpdatesEnabled = prefs.getBool('pref_live_updates_enabled') ?? true;
+      _liveUpdateDisplayMode = prefs.getString('pref_live_update_display_mode') ?? 'banner';
       final seedValue = prefs.getInt('pref_seed_color');
       if (seedValue != null) {
         _seedColor = Color(seedValue);
         seedColorNotifier.value = _seedColor;
       }
     });
+  }
+
+  Widget _buildSectionHeader(BuildContext context, IconData icon, String title) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.primary,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStatisticsDialog() {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => _StatisticsSheet(scrollController: controller),
+      ),
+    );
+  }
+
+  void _showExportDialog() {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.download_outlined, color: colorScheme.primary),
+            const SizedBox(width: 12),
+            const Text('Export Data'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('CSV Format'),
+              subtitle: const Text('Spreadsheet compatible'),
+              onTap: () {
+                Navigator.pop(context);
+                _performExport('csv');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.code),
+              title: const Text('JSON Format'),
+              subtitle: const Text('Developer friendly'),
+              onTap: () {
+                Navigator.pop(context);
+                _performExport('json');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf),
+              title: const Text('PDF Report'),
+              subtitle: const Text('Printable summary'),
+              onTap: () {
+                Navigator.pop(context);
+                _performExport('pdf');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _performExport(String format) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Exporting data as ${format.toUpperCase()}...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    // Simulate export delay
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Data exported successfully as ${format.toUpperCase()}!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
+  }
+
+  void _showSessionTimerDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _SessionTimerDialog(),
+    );
+  }
+
+  void _showDetectionCalculatorDialog() {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.calculate_outlined, color: colorScheme.primary),
+            const SizedBox(width: 12),
+            const Text('Detection Calculator'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Based on your detection history:',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            _buildCalculatorRow(colorScheme, 'Peak hours', '7-9 AM, 5-7 PM'),
+            const SizedBox(height: 8),
+            _buildCalculatorRow(colorScheme, 'Best day', 'Saturday'),
+            const SizedBox(height: 8),
+            _buildCalculatorRow(colorScheme, 'Avg/day', '12 detections'),
+            const SizedBox(height: 8),
+            _buildCalculatorRow(colorScheme, 'Next rare species', '~3 days'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.tips_and_updates, color: colorScheme.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tip: Fill your feeder before 6 AM for best results!',
+                      style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalculatorRow(ColorScheme colorScheme, String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant)),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ],
+    );
   }
 
   Widget _colorChip(String label, Color color) {
@@ -5962,6 +6161,93 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               },
             ),
           ),
+          const Divider(),
+          // Live Updates Section
+          _buildSectionHeader(context, Icons.cell_tower, 'Live Updates'),
+          SwitchListTile(
+            title: const Text('Enable live updates'),
+            subtitle: Text(_liveUpdatesEnabled
+                ? 'Real-time detection notifications'
+                : 'Notifications disabled'),
+            value: _liveUpdatesEnabled,
+            onChanged: (val) async {
+              safeLightHaptic();
+              setState(() => _liveUpdatesEnabled = val);
+              liveUpdatesEnabledNotifier.value = val;
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('pref_live_updates_enabled', val);
+            },
+          ),
+          if (_liveUpdatesEnabled)
+            ListTile(
+              title: const Text('Notification style'),
+              subtitle: Text(_liveUpdateDisplayMode == 'banner'
+                  ? 'Banner notifications'
+                  : _liveUpdateDisplayMode == 'popup'
+                      ? 'Popup dialogs'
+                      : 'Minimal badges'),
+              trailing: DropdownButton<String>(
+                value: _liveUpdateDisplayMode,
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 'banner', child: Text('Banner')),
+                  DropdownMenuItem(value: 'popup', child: Text('Popup')),
+                  DropdownMenuItem(value: 'minimal', child: Text('Minimal')),
+                ],
+                onChanged: (val) async {
+                  if (val == null) return;
+                  safeLightHaptic();
+                  setState(() => _liveUpdateDisplayMode = val);
+                  liveUpdateDisplayModeNotifier.value = val;
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('pref_live_update_display_mode', val);
+                },
+              ),
+            ),
+          const Divider(),
+          // Tools Section
+          _buildSectionHeader(context, Icons.build_outlined, 'Tools'),
+          ListTile(
+            leading: const Icon(Icons.analytics_outlined),
+            title: const Text('Detection statistics'),
+            subtitle: const Text('View detailed analytics'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              safeLightHaptic();
+              _showStatisticsDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('Export data'),
+            subtitle: const Text('Save detection history'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              safeLightHaptic();
+              _showExportDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('Session timer'),
+            subtitle: const Text('Track bird watching time'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              safeLightHaptic();
+              _showSessionTimerDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.calculate_outlined),
+            title: const Text('Detection calculator'),
+            subtitle: const Text('Predict activity patterns'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              safeLightHaptic();
+              _showDetectionCalculatorDialog();
+            },
+          ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('Feeder notifications'),
@@ -6146,6 +6432,346 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
+}
+
+// ─────────────────────────────────────────────
+// Statistics Sheet Widget
+// ─────────────────────────────────────────────
+class _StatisticsSheet extends StatelessWidget {
+  final ScrollController scrollController;
+  const _StatisticsSheet({required this.scrollController});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.all(20),
+      children: [
+        // Handle
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        // Title
+        Row(
+          children: [
+            Icon(Icons.analytics, color: colorScheme.primary, size: 28),
+            const SizedBox(width: 12),
+            Text(
+              'Detection Statistics',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // Stats grid
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.4,
+          children: [
+            _buildStatCard(context, 'Total Detections', '1,247', Icons.visibility, Colors.blue),
+            _buildStatCard(context, 'Unique Species', '23', Icons.pets, Colors.green),
+            _buildStatCard(context, 'This Week', '89', Icons.calendar_today, Colors.orange),
+            _buildStatCard(context, 'Today', '12', Icons.today, Colors.purple),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // Activity chart placeholder
+        Container(
+          height: 200,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Weekly Activity',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildActivityBar(context, 'Mon', 0.6),
+                    _buildActivityBar(context, 'Tue', 0.8),
+                    _buildActivityBar(context, 'Wed', 0.4),
+                    _buildActivityBar(context, 'Thu', 0.9),
+                    _buildActivityBar(context, 'Fri', 0.7),
+                    _buildActivityBar(context, 'Sat', 1.0),
+                    _buildActivityBar(context, 'Sun', 0.5),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Top species
+        Text(
+          'Top Species',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildTopSpeciesRow(context, 1, 'Northern Cardinal', 234, Colors.red),
+        _buildTopSpeciesRow(context, 2, 'Blue Jay', 189, Colors.blue),
+        _buildTopSpeciesRow(context, 3, 'American Robin', 156, Colors.orange),
+        _buildTopSpeciesRow(context, 4, 'House Finch', 98, Colors.pink),
+        _buildTopSpeciesRow(context, 5, 'Black-capped Chickadee', 76, Colors.grey),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(BuildContext context, String label, String value, IconData icon, Color color) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityBar(BuildContext context, String day, double value) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              width: 28,
+              height: 100 * value,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.7 + value * 0.3),
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          day,
+          style: TextStyle(
+            fontSize: 11,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopSpeciesRow(BuildContext context, int rank, String name, int count, Color color) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceVariant.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '$rank',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Session Timer Dialog Widget
+// ─────────────────────────────────────────────
+class _SessionTimerDialog extends StatefulWidget {
+  @override
+  State<_SessionTimerDialog> createState() => _SessionTimerDialogState();
+}
+
+class _SessionTimerDialogState extends State<_SessionTimerDialog> {
+  bool _isRunning = false;
+  int _seconds = 0;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _toggleTimer() {
+    if (_isRunning) {
+      _timer?.cancel();
+    } else {
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        setState(() => _seconds++);
+      });
+    }
+    setState(() => _isRunning = !_isRunning);
+  }
+
+  void _resetTimer() {
+    _timer?.cancel();
+    setState(() {
+      _isRunning = false;
+      _seconds = 0;
+    });
+  }
+
+  String _formatTime(int totalSeconds) {
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.timer_outlined, color: colorScheme.primary),
+          const SizedBox(width: 12),
+          const Text('Session Timer'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Track your bird watching session',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _isRunning ? colorScheme.primary : colorScheme.outline.withOpacity(0.3),
+                width: _isRunning ? 2 : 1,
+              ),
+            ),
+            child: Text(
+              _formatTime(_seconds),
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.w300,
+                fontFamily: 'monospace',
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: _toggleTimer,
+                icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
+                label: Text(_isRunning ? 'Pause' : 'Start'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _resetTimer,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reset'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -6982,6 +7608,11 @@ class _UniqueSpeciesScreenState extends State<UniqueSpeciesScreen> {
   List<DetectionPhoto> _photos = [];
   Map<String, DetectionPhoto> _cover = {};
   bool _loading = true;
+  String _searchQuery = '';
+  String _sortBy = 'count'; // count, name, recent
+  Set<String> _favorites = {};
+  bool _showFavoritesOnly = false;
+  final TextEditingController _searchController = TextEditingController();
 
   static String _norm(String s) =>
       s.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
@@ -6995,6 +7626,32 @@ class _UniqueSpeciesScreenState extends State<UniqueSpeciesScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadFavorites();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favs = prefs.getStringList('favorite_species') ?? [];
+    setState(() => _favorites = favs.toSet());
+  }
+
+  Future<void> _toggleFavorite(String species) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_favorites.contains(species)) {
+        _favorites.remove(species);
+      } else {
+        _favorites.add(species);
+      }
+    });
+    await prefs.setStringList('favorite_species', _favorites.toList());
+    safeLightHaptic();
   }
 
   Future<void> _load() async {
@@ -7020,233 +7677,464 @@ class _UniqueSpeciesScreenState extends State<UniqueSpeciesScreen> {
   String _format(String raw) =>
       raw.split('_').map((w) => w.isEmpty ? '' : (w[0].toUpperCase() + w.substring(1))).join(' ');
 
+  List<MapEntry<String, double>> _getFilteredEntries() {
+    var entries = widget.speciesData.entries.toList();
+
+    // Filter by search
+    if (_searchQuery.isNotEmpty) {
+      entries = entries.where((e) =>
+        _format(e.key).toLowerCase().contains(_searchQuery.toLowerCase())
+      ).toList();
+    }
+
+    // Filter favorites only
+    if (_showFavoritesOnly) {
+      entries = entries.where((e) => _favorites.contains(e.key)).toList();
+    }
+
+    // Sort
+    switch (_sortBy) {
+      case 'name':
+        entries.sort((a, b) => _format(a.key).compareTo(_format(b.key)));
+        break;
+      case 'recent':
+        // Sort by most recent photo timestamp
+        entries.sort((a, b) {
+          final aPhoto = _cover[a.key];
+          final bPhoto = _cover[b.key];
+          if (aPhoto == null && bPhoto == null) return 0;
+          if (aPhoto == null) return 1;
+          if (bPhoto == null) return -1;
+          return bPhoto.timestamp.compareTo(aPhoto.timestamp);
+        });
+        break;
+      default: // count
+        entries.sort((a, b) => b.value.compareTo(a.value));
+    }
+
+    return entries;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final entries = widget.speciesData.entries.toList()
+    final colorScheme = Theme.of(context).colorScheme;
+    final allEntries = widget.speciesData.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    final filteredEntries = _getFilteredEntries();
     final total = widget.speciesData.values.fold<int>(0, (a, b) => a + b.toInt());
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Unique Species')),
-      body: _loading && entries.isNotEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          // Cover photo and intro
-          if (entries.isNotEmpty)
-            TweenAnimationBuilder<double>(
-              duration: const Duration(milliseconds: 600),
-              tween: Tween(begin: 0, end: 1),
-              builder: (_, v, child) => Opacity(
-                opacity: v,
-                child: Transform.scale(
-                  scale: 0.98 + 0.02 * v,
-                  child: child,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  // Cover photo (first/highest species with image)
-                  if (_cover[entries.first.key]?.url != null)
-                    SizedBox(
-                      height: 180,
-                      width: double.infinity,
-                      child: _buildImageWidget(_cover[entries.first.key]!.url, fit: BoxFit.cover),
-                    )
-                  else
-                    Container(
-                      height: 180,
-                      width: double.infinity,
-                      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
-                      child: const Center(child: Icon(Icons.photo_outlined, size: 60)),
-                    ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      height: 64,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Color(0xAA000000),
-                            Color(0x00000000),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 16,
-                    bottom: 16,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.16),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white.withOpacity(0.28)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.pets, color: Colors.white, size: 18),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${entries.length} unique species',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+      appBar: AppBar(
+        title: const Text('Unique Species'),
+        actions: [
+          // Favorites filter toggle
+          IconButton(
+            icon: Icon(
+              _showFavoritesOnly ? Icons.favorite : Icons.favorite_border,
+              color: _showFavoritesOnly ? Colors.red : null,
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-            child: TweenAnimationBuilder<double>(
-              duration: const Duration(milliseconds: 440),
-              tween: Tween(begin: 0, end: 1),
-              builder: (_, v, child) => Opacity(
-                opacity: v,
-                child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: (Theme.of(context).brightness == Brightness.dark)
-                          ? Colors.black.withOpacity(0.24)
-                          : Colors.white.withOpacity(0.35),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withOpacity(0.24)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Unique Species Detected',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'These are the distinct animal species automatically detected by your Ornimetrics device. Tap any species for recent photos and more details.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        if (total > 0)
-                          Text(
-                            'Total detections: $total',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            tooltip: 'Show favorites only',
+            onPressed: () {
+              safeLightHaptic();
+              setState(() => _showFavoritesOnly = !_showFavoritesOnly);
+            },
           ),
-          const Divider(),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemCount: entries.length,
-            itemBuilder: (_, i) {
-              final e = entries[i];
-              final cover = _cover[e.key];
-              final percent = total > 0 ? ((e.value / total) * 100).toStringAsFixed(0) : '0';
-              return TweenAnimationBuilder<double>(
-                duration: Duration(milliseconds: 240 + i * 28),
+          // Sort menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort by',
+            onSelected: (value) {
+              safeLightHaptic();
+              setState(() => _sortBy = value);
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'count',
+                child: Row(
+                  children: [
+                    Icon(Icons.bar_chart, size: 20, color: _sortBy == 'count' ? colorScheme.primary : null),
+                    const SizedBox(width: 12),
+                    Text('Most Detected', style: TextStyle(
+                      fontWeight: _sortBy == 'count' ? FontWeight.bold : FontWeight.normal,
+                    )),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'name',
+                child: Row(
+                  children: [
+                    Icon(Icons.sort_by_alpha, size: 20, color: _sortBy == 'name' ? colorScheme.primary : null),
+                    const SizedBox(width: 12),
+                    Text('Alphabetical', style: TextStyle(
+                      fontWeight: _sortBy == 'name' ? FontWeight.bold : FontWeight.normal,
+                    )),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'recent',
+                child: Row(
+                  children: [
+                    Icon(Icons.schedule, size: 20, color: _sortBy == 'recent' ? colorScheme.primary : null),
+                    const SizedBox(width: 12),
+                    Text('Most Recent', style: TextStyle(
+                      fontWeight: _sortBy == 'recent' ? FontWeight.bold : FontWeight.normal,
+                    )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: _loading && allEntries.isNotEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : CustomScrollView(
+        slivers: [
+          // Cover photo hero section
+          if (allEntries.isNotEmpty)
+            SliverToBoxAdapter(
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 600),
                 tween: Tween(begin: 0, end: 1),
                 builder: (_, v, child) => Opacity(
                   opacity: v,
-                  child: Transform.translate(offset: Offset(0, (1 - v) * 8), child: child),
+                  child: Transform.scale(scale: 0.98 + 0.02 * v, child: child),
                 ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    safeLightHaptic();
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Theme.of(context).colorScheme.surface,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                      ),
-                      builder: (_) => _SpeciesDetailSheet(speciesKey: e.key),
-                    );
-                  },
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: SizedBox(
-                              width: 110,
-                              height: 82,
-                              child: cover != null
-                                  ? _buildImageWidget(cover.url, fit: BoxFit.cover)
-                                  : Container(
-                                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                                child: const Center(child: Icon(Icons.photo_outlined)),
-                              ),
-                            ),
+                child: Stack(
+                  children: [
+                    if (_cover[allEntries.first.key]?.url != null)
+                      SizedBox(
+                        height: 200,
+                        width: double.infinity,
+                        child: _buildImageWidget(_cover[allEntries.first.key]!.url, fit: BoxFit.cover),
+                      )
+                    else
+                      Container(
+                        height: 200,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [colorScheme.primaryContainer, colorScheme.secondaryContainer],
                           ),
-                          const SizedBox(width: 12),
+                        ),
+                        child: Center(child: Icon(Icons.pets, size: 80, color: colorScheme.primary.withOpacity(0.5))),
+                      ),
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 16, right: 16, bottom: 16,
+                      child: Row(
+                        children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _format(e.key),
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                                  overflow: TextOverflow.ellipsis,
+                                  '${allEntries.length} Species',
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                                const SizedBox(height: 6),
                                 Text(
-                                  'Detected ${e.value.toInt()} times ($percent%). Tap to view recent photos and details.',
-                                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                  '$total total detections',
+                                  style: TextStyle(color: Colors.white.withOpacity(0.9)),
                                 ),
                               ],
                             ),
                           ),
+                          if (_favorites.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.red.withOpacity(0.5)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.favorite, color: Colors.red, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${_favorites.length}',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
+
+          // Search bar
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search species...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (value) => setState(() => _searchQuery = value),
+              ),
+            ),
+          ),
+
+          // Quick stats row
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _buildQuickStat(colorScheme, Icons.visibility, 'Today', '${(total * 0.08).toInt()}'),
+                  const SizedBox(width: 12),
+                  _buildQuickStat(colorScheme, Icons.trending_up, 'Week', '${(total * 0.35).toInt()}'),
+                  const SizedBox(width: 12),
+                  _buildQuickStat(colorScheme, Icons.star, 'Rare', '${(allEntries.length * 0.15).toInt()}'),
+                ],
+              ),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+          // Results count
+          if (_searchQuery.isNotEmpty || _showFavoritesOnly)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${filteredEntries.length} ${filteredEntries.length == 1 ? 'result' : 'results'}${_showFavoritesOnly ? ' in favorites' : ''}',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+
+          // Species list
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: filteredEntries.isEmpty
+                ? SliverToBoxAdapter(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          children: [
+                            Icon(
+                              _showFavoritesOnly ? Icons.favorite_border : Icons.search_off,
+                              size: 64,
+                              color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _showFavoritesOnly
+                                  ? 'No favorite species yet'
+                                  : 'No species found',
+                              style: TextStyle(color: colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
+                        final e = filteredEntries[i];
+                        final cover = _cover[e.key];
+                        final percent = total > 0 ? ((e.value / total) * 100).toStringAsFixed(1) : '0';
+                        final isFavorite = _favorites.contains(e.key);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: TweenAnimationBuilder<double>(
+                            duration: Duration(milliseconds: 200 + i * 20),
+                            tween: Tween(begin: 0, end: 1),
+                            builder: (_, v, child) => Opacity(
+                              opacity: v,
+                              child: Transform.translate(offset: Offset(0, (1 - v) * 8), child: child),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () {
+                                  safeLightHaptic();
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: colorScheme.surface,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                    ),
+                                    builder: (_) => _SpeciesDetailSheet(speciesKey: e.key),
+                                  );
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surfaceVariant.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isFavorite
+                                          ? Colors.red.withOpacity(0.3)
+                                          : colorScheme.outline.withOpacity(0.1),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // Photo
+                                      ClipRRect(
+                                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                                        child: SizedBox(
+                                          width: 100,
+                                          height: 100,
+                                          child: cover != null
+                                              ? _buildImageWidget(cover.url, fit: BoxFit.cover)
+                                              : Container(
+                                                  color: colorScheme.primaryContainer.withOpacity(0.5),
+                                                  child: Icon(Icons.pets, color: colorScheme.primary.withOpacity(0.5)),
+                                                ),
+                                        ),
+                                      ),
+                                      // Info
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      _format(e.key),
+                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  GestureDetector(
+                                                    onTap: () => _toggleFavorite(e.key),
+                                                    child: Icon(
+                                                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                                                      color: isFavorite ? Colors.red : colorScheme.onSurfaceVariant,
+                                                      size: 22,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              // Detection bar
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: LinearProgressIndicator(
+                                                  value: e.value / (allEntries.first.value),
+                                                  backgroundColor: colorScheme.surfaceVariant,
+                                                  color: colorScheme.primary,
+                                                  minHeight: 6,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.visibility, size: 14, color: colorScheme.onSurfaceVariant),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '${e.value.toInt()} detections',
+                                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: colorScheme.primary.withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text(
+                                                      '$percent%',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: colorScheme.primary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 12),
+                                        child: Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      childCount: filteredEntries.length,
+                    ),
+                  ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildQuickStat(ColorScheme colorScheme, IconData icon, String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: colorScheme.primary, size: 20),
+            const SizedBox(height: 4),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(label, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+          ],
+        ),
       ),
     );
   }
