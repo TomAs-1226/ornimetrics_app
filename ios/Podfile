@@ -41,6 +41,17 @@ target 'Runner' do
   pod 'GoogleUtilities/AppDelegateSwizzler', :modular_headers => true
   pod 'GoogleUtilities/Reachability', :modular_headers => true
 
+  # GTMSessionFetcher is required by FirebaseStorage
+  pod 'GTMSessionFetcher', :modular_headers => true
+  pod 'GTMSessionFetcher/Core', :modular_headers => true
+
+  # Firebase pods that need modular headers
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseAppCheckInterop', :modular_headers => true
+  pod 'FirebaseAuthInterop', :modular_headers => true
+  pod 'FirebaseStorageInternal', :modular_headers => true
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
   target 'RunnerTests' do
@@ -68,6 +79,8 @@ post_install do |installer|
     is_boringssl = target.name.include?('BoringSSL') || target.name.include?('grpc')
     # Special handling for leveldb-library which has port namespace issues on newer Xcode
     is_leveldb = target.name.include?('leveldb')
+    # Special handling for Firebase pods
+    is_firebase = target.name.include?('Firebase') || target.name.include?('firebase')
 
     target.build_configurations.each do |config|
       # Ensure all pods use iOS 13.0 minimum deployment target
@@ -82,6 +95,16 @@ post_install do |installer|
         config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
         if config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].is_a?(Array)
           config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'OPENSSL_NO_ASM=1'
+        end
+      end
+
+      # Fix Firebase version not defined error
+      if is_firebase
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+        if config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].is_a?(Array)
+          unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].any? { |d| d.to_s.include?('Firebase_VERSION') }
+            config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'Firebase_VERSION=10.25.0'
+          end
         end
       end
 
