@@ -7,6 +7,18 @@
     },
     "photo_snapshots": {
       ".indexOn": ["timestamp"]
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+        "field_detections": {
+          ".indexOn": ["timestamp"]
+        }
+      }
+    },
+    "manual_detections": {
+      ".indexOn": ["timestamp"]
     }
   }
 }

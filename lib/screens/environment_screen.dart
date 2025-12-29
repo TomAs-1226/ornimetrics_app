@@ -86,8 +86,19 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
       await prefs.setString(_kWeatherCacheKey, json.encode(res.toMap()));
       setState(() => _data = res);
     } catch (e) {
-      // If we have cached data, keep showing it and surface a message; otherwise show the error card.
-      setState(() => _error = _data != null ? 'Using cached weather. Latest error: ${e.toString()}' : e.toString());
+      debugPrint('Weather fetch failed: $e');
+      // Show user-friendly message instead of technical details
+      final errorStr = e.toString().toLowerCase();
+      String userMessage;
+      if (errorStr.contains('socket') || errorStr.contains('connection') || errorStr.contains('network')) {
+        userMessage = 'No internet connection';
+      } else if (errorStr.contains('timeout')) {
+        userMessage = 'Connection timed out';
+      } else {
+        userMessage = 'Could not load weather data';
+      }
+      // If we have cached data, keep showing it and surface a friendly message
+      setState(() => _error = _data != null ? 'Using cached weather • $userMessage' : userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
