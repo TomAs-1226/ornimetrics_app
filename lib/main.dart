@@ -7670,47 +7670,74 @@ class _ToolsScreenState extends State<ToolsScreen> {
       // Fetch from user-specific field_detections (primary source)
       if (user != null) {
         _currentUserEmail = user.email;
-        final userSnap = await db.child('users/${user.uid}/field_detections').orderByChild('timestamp').limitToLast(50).get();
+        debugPrint('Loading field detections for user: ${user.uid}');
 
-        if (userSnap.exists && userSnap.value is Map) {
-          final m = Map<dynamic, dynamic>.from(userSnap.value as Map);
-          m.forEach((key, raw) {
-            if (raw is Map) {
-              detections.add({
-                'id': key,
-                'source': 'user_field',
-                ...Map<String, dynamic>.from(raw),
-              });
-            }
-          });
+        try {
+          // Simple get without query constraints (more reliable)
+          final userSnap = await db.child('users/${user.uid}/field_detections').get();
+          debugPrint('User field detections snapshot exists: ${userSnap.exists}');
+
+          if (userSnap.exists && userSnap.value is Map) {
+            final m = Map<dynamic, dynamic>.from(userSnap.value as Map);
+            debugPrint('Found ${m.length} user field detections');
+            m.forEach((key, raw) {
+              if (raw is Map) {
+                detections.add({
+                  'id': key,
+                  'source': 'user_field',
+                  ...Map<String, dynamic>.from(raw),
+                });
+              }
+            });
+          }
+        } catch (userError) {
+          debugPrint('Error loading user field detections: $userError');
+          // Continue to try legacy path
         }
+      } else {
+        debugPrint('No user logged in, skipping user-specific detections');
       }
 
       // Also fetch from legacy manual_detections for backwards compatibility
-      final legacySnap = await db.child('manual_detections').orderByChild('timestamp').limitToLast(20).get();
-      if (legacySnap.exists && legacySnap.value is Map) {
-        final m = Map<dynamic, dynamic>.from(legacySnap.value as Map);
-        m.forEach((key, raw) {
-          if (raw is Map) {
-            // Only add if not already added from user path (avoid duplicates)
-            final existingIds = detections.map((d) => d['id']).toSet();
-            if (!existingIds.contains(key)) {
-              detections.add({
-                'id': key,
-                'source': 'legacy',
-                ...Map<String, dynamic>.from(raw),
-              });
+      try {
+        final legacySnap = await db.child('manual_detections').get();
+        if (legacySnap.exists && legacySnap.value is Map) {
+          final m = Map<dynamic, dynamic>.from(legacySnap.value as Map);
+          debugPrint('Found ${m.length} legacy manual detections');
+          m.forEach((key, raw) {
+            if (raw is Map) {
+              // Only add if not already added from user path (avoid duplicates)
+              final existingIds = detections.map((d) => d['id']).toSet();
+              if (!existingIds.contains(key)) {
+                detections.add({
+                  'id': key,
+                  'source': 'legacy',
+                  ...Map<String, dynamic>.from(raw),
+                });
+              }
             }
-          }
-        });
+          });
+        }
+      } catch (legacyError) {
+        debugPrint('Error loading legacy detections: $legacyError');
       }
 
-      // Sort by timestamp descending
-      detections.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+      // Sort by timestamp descending (most recent first)
+      detections.sort((a, b) {
+        final aTs = a['timestamp'] ?? 0;
+        final bTs = b['timestamp'] ?? 0;
+        if (aTs is int && bTs is int) return bTs.compareTo(aTs);
+        return 0;
+      });
+
+      // Limit to most recent 50
+      final limitedDetections = detections.take(50).toList();
+
+      debugPrint('Total detections loaded: ${limitedDetections.length}');
 
       if (mounted) {
         setState(() {
-          _manualDetections = detections;
+          _manualDetections = limitedDetections;
           _loadingDetections = false;
         });
       }
