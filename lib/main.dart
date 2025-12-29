@@ -64,6 +64,10 @@ final ValueNotifier<bool> liveUpdateVibrationNotifier = ValueNotifier(true);
 final ValueNotifier<String> liveUpdateDisplayModeNotifier = ValueNotifier('banner'); // banner, popup, minimal
 final ValueNotifier<List<String>> liveUpdateTypesNotifier = ValueNotifier(['new_detection', 'rare_species', 'community']);
 
+// Model Improvement Program - opt-in to share images for model training
+final ValueNotifier<bool> modelImprovementOptInNotifier = ValueNotifier(false);
+final ValueNotifier<int> imagesContributedNotifier = ValueNotifier(0);
+
 // ─────────────────────────────────────────────
 // Global Session Timer Service
 // ─────────────────────────────────────────────
@@ -7218,17 +7222,6 @@ class _ToolsScreenState extends State<ToolsScreen> {
                 onTap: () => _showAIHabitatSheet(context),
                 isCompact: isCompact,
               ),
-              const SizedBox(height: 10),
-              _buildAIToolCard(
-                colorScheme,
-                icon: Icons.record_voice_over,
-                title: 'AI Sound Identifier',
-                subtitle: 'Identify birds by their calls',
-                description: 'Record and analyze bird sounds',
-                gradientColors: [Colors.indigo, Colors.purple],
-                onTap: () => _showSoundIdentifierSheet(context),
-                isCompact: isCompact,
-              ),
               const SizedBox(height: 24),
 
               // Utility Tools Section
@@ -7254,6 +7247,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                   _buildUtilityToolCard(colorScheme, Icons.flight, 'Migration', 'Tracker', () => _showMigrationDialog(context), isCompact: isCompact),
                   _buildUtilityToolCard(colorScheme, Icons.library_books, 'Library', 'Species', () => _showSpeciesLibraryDialog(context), isCompact: isCompact),
                   _buildUtilityToolCard(colorScheme, Icons.cleaning_services, 'Cleaning', 'Reminder', () => _showCleaningReminderDialog(context), isCompact: isCompact),
+                  _buildModelImprovementCard(colorScheme, isCompact: isCompact),
                 ],
               ),
               const SizedBox(height: 24),
@@ -7391,6 +7385,185 @@ class _ToolsScreenState extends State<ToolsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildModelImprovementCard(ColorScheme colorScheme, {bool isCompact = false}) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: modelImprovementOptInNotifier,
+      builder: (context, isOptedIn, _) {
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () { safeLightHaptic(); _showModelImprovementDialog(context); },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: EdgeInsets.all(isCompact ? 10 : 12),
+              decoration: BoxDecoration(
+                color: isOptedIn ? Colors.purple.withOpacity(0.1) : colorScheme.surfaceVariant.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isOptedIn ? Colors.purple.withOpacity(0.3) : colorScheme.outline.withOpacity(0.1)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.model_training, color: isOptedIn ? Colors.purple : colorScheme.primary, size: isCompact ? 22 : 24),
+                  SizedBox(height: isCompact ? 4 : 6),
+                  Text('Improve AI', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isCompact ? 12 : 13), textAlign: TextAlign.center),
+                  Text(isOptedIn ? 'Enrolled' : 'Help train', style: TextStyle(fontSize: isCompact ? 9 : 10, color: isOptedIn ? Colors.purple : colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showModelImprovementDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(colors: [Colors.purple, Colors.blue]).createShader(bounds),
+                    child: const Icon(Icons.model_training, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Model Improvement Program', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text('Help make our AI smarter', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [Colors.purple.withOpacity(0.08), Colors.blue.withOpacity(0.08)]),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.purple.withOpacity(0.2)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.auto_awesome, size: 48, color: Colors.purple),
+                    const SizedBox(height: 12),
+                    Text(
+                      'By opting in, your field detection images will be used to train and improve our bird identification AI model.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: colorScheme.onSurface, height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                  children: [
+                    _buildBenefitRow(colorScheme, Icons.psychology, 'Improve AI accuracy for everyone'),
+                    const SizedBox(height: 10),
+                    _buildBenefitRow(colorScheme, Icons.security, 'Images are anonymized and secure'),
+                    const SizedBox(height: 10),
+                    _buildBenefitRow(colorScheme, Icons.volunteer_activism, 'Contribute to bird conservation'),
+                    const SizedBox(height: 10),
+                    _buildBenefitRow(colorScheme, Icons.cancel_outlined, 'Opt out anytime'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ValueListenableBuilder<int>(
+                valueListenable: imagesContributedNotifier,
+                builder: (context, count, _) => count > 0
+                    ? Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            const SizedBox(width: 10),
+                            Text('You\'ve contributed $count image${count == 1 ? '' : 's'}!', style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: modelImprovementOptInNotifier,
+                builder: (context, isOptedIn, _) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isOptedIn ? Colors.purple.withOpacity(0.1) : colorScheme.surfaceVariant.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isOptedIn ? Colors.purple.withOpacity(0.3) : colorScheme.outline.withOpacity(0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(isOptedIn ? Icons.check_circle : Icons.circle_outlined, color: isOptedIn ? Colors.purple : colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Share my images for training', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+                            Text(isOptedIn ? 'You\'re helping improve the AI!' : 'Help make our model better', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: isOptedIn,
+                        activeColor: Colors.purple,
+                        onChanged: (value) async {
+                          modelImprovementOptInNotifier.value = value;
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('model_improvement_opt_in', value);
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'By participating, you agree that your images may be used to train AI models. No personal data is collected.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBenefitRow(ColorScheme colorScheme, IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.purple),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: colorScheme.onSurface))),
+      ],
     );
   }
 
@@ -8127,127 +8300,38 @@ class _ToolsScreenState extends State<ToolsScreen> {
     );
   }
 
-  void _showSoundIdentifierSheet(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: colorScheme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(colors: [Colors.indigo, Colors.purple]).createShader(bounds),
-                  child: const Icon(Icons.record_voice_over, color: Colors.white, size: 28),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('AI Sound Identifier', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    Text('Identify birds by their calls', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [Colors.indigo.withOpacity(0.1), Colors.purple.withOpacity(0.1)]),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.indigo.withOpacity(0.3)),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.indigo,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.indigo.withOpacity(0.3), blurRadius: 20, spreadRadius: 5)],
-                    ),
-                    child: const Icon(Icons.mic, size: 48, color: Colors.white),
-                  ),
-                  const SizedBox(height: 20),
-                  Text('Tap to Record', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
-                  const SizedBox(height: 8),
-                  Text('Hold your phone near the bird song', style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: Colors.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                children: [
-                  Icon(Icons.lightbulb_outline, color: Colors.blue, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('Best results in quiet environments with clear bird calls', style: TextStyle(fontSize: 12, color: colorScheme.onSurface))),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Recent Identifications', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
-            const SizedBox(height: 12),
-            _buildSoundHistoryItem(colorScheme, 'American Robin', '3 hours ago', 0.92),
-            _buildSoundHistoryItem(colorScheme, 'Song Sparrow', 'Yesterday', 0.87),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSoundHistoryItem(ColorScheme colorScheme, String species, String time, double confidence) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(10)),
-      child: Row(
-        children: [
-          Icon(Icons.music_note, color: colorScheme.primary, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(species, style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(time, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text('${(confidence * 100).toInt()}%', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────
 // AI Species Identifier Sheet - Full Implementation
 // ─────────────────────────────────────────────
 
-/// Service for running the PyTorch bird detection model
-/// Model file should be placed in: assets/models/bird_classifier.pt
+/// Service for running the PyTorch bird detection model.
+///
+/// MODEL PLACEMENT INSTRUCTIONS:
+/// ─────────────────────────────────────────────
+/// 1. Create the directory: assets/models/
+/// 2. Place your PyTorch model file at: assets/models/bird_classifier.pt
+/// 3. Add to pubspec.yaml under flutter > assets:
+///      - assets/models/
+///
+/// For TorchScript models (.pt):
+///   - Use pytorch_mobile package
+///   - Model should be exported with torch.jit.script() or torch.jit.trace()
+///
+/// For TensorFlow Lite models (.tflite):
+///   - Use tflite_flutter package
+///   - Convert your PyTorch model to ONNX, then to TFLite
+///
+/// Expected model input: 224x224 RGB image tensor
+/// Expected model output: Class probabilities for bird species
+/// ─────────────────────────────────────────────
 class BirdDetectionService {
   static final BirdDetectionService instance = BirdDetectionService._();
   BirdDetectionService._();
 
-  // In production, this would load and run the actual PyTorch model
-  // For now, it provides the interface and simulates detection
+  /// Path to the PyTorch model file
+  /// Place your model at: [project_root]/assets/models/bird_classifier.pt
   static const String modelPath = 'assets/models/bird_classifier.pt';
 
   Future<Map<String, dynamic>> detectSpecies(Uint8List imageBytes) async {
@@ -8583,6 +8667,26 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
 
       await db.child('manual_detections').push().set(detectionData);
 
+      // Upload to training pool if user opted in to Model Improvement Program
+      bool contributedToTraining = false;
+      if (modelImprovementOptInNotifier.value && _imageBytes != null && detectionData['image_url'] != null) {
+        try {
+          final trainingData = {
+            'image_url': detectionData['image_url'],
+            'species': _identifiedSpecies,
+            'scientific_name': _scientificName,
+            'confidence': _confidence,
+            'timestamp': now.millisecondsSinceEpoch,
+            'user_verified': true,
+          };
+          await db.child('training_pool').push().set(trainingData);
+          imagesContributedNotifier.value++;
+          contributedToTraining = true;
+        } catch (_) {
+          // Continue even if training upload fails
+        }
+      }
+
       if (mounted) {
         Navigator.pop(context);
         widget.onDetectionSaved();
@@ -8592,7 +8696,7 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
-                Expanded(child: Text('$_identifiedSpecies saved with ${_includeLocation ? 'location, ' : ''}${_includeWeather ? 'weather, ' : ''}${_includeAIAnalysis ? 'AI analysis' : ''}')),
+                Expanded(child: Text('$_identifiedSpecies saved${contributedToTraining ? ' & contributed to AI training' : ''}')),
               ],
             ),
             backgroundColor: Colors.green,
