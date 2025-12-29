@@ -4516,7 +4516,8 @@ class _PhotoTileState extends State<_PhotoTile> with SingleTickerProviderStateMi
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -5746,7 +5747,7 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
                           left: MediaQuery.of(context).size.width * offset,
                           child: Text(
                             '☁️',
-                            style: TextStyle(fontSize: 40 - i * 4.0, opacity: 0.7),
+                            style: TextStyle(fontSize: 40 - i * 4.0, color: Colors.white.withOpacity(0.7)),
                           ),
                         );
                       },
