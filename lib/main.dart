@@ -76,8 +76,16 @@ class LocalCacheService {
 
       if (speciesJson == null || total == null) return null;
 
-      final Map<String, dynamic> decoded = json.decode(speciesJson);
-      final species = decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
+      final dynamic rawDecoded = json.decode(speciesJson);
+      if (rawDecoded is! Map) return null;
+
+      final Map<String, double> species = {};
+      rawDecoded.forEach((key, value) {
+        if (key is String && value is num) {
+          species[key] = value.toDouble();
+        }
+      });
+
       final cachedAt = cachedAtStr != null ? DateTime.tryParse(cachedAtStr) : null;
 
       return (species: species, total: total, cachedAt: cachedAt);
@@ -763,43 +771,54 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadTasks();
     _captureLocation(); // Do not block initial renders on location.
     // Load cached data immediately for instant display, then fetch fresh data
-    _loadCachedDataAndRefresh();
+    // Use addPostFrameCallback to ensure widget is fully mounted before async operations
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCachedDataAndRefresh();
+    });
     _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
 
   /// Load cached data first for instant display, then fetch fresh data in background
   Future<void> _loadCachedDataAndRefresh() async {
-    // First, try to load cached data for instant display
-    final cachedSpecies = await LocalCacheService.loadCachedSpeciesData();
-    final cachedPhotos = await LocalCacheService.loadCachedPhotos();
+    try {
+      // First, try to load cached data for instant display
+      final cachedSpecies = await LocalCacheService.loadCachedSpeciesData();
+      final cachedPhotos = await LocalCacheService.loadCachedPhotos();
 
-    if (cachedSpecies != null && cachedSpecies.species.isNotEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _totalDetections = cachedSpecies.total;
-        _speciesDataMap = cachedSpecies.species;
-        _isLoading = false;
-        _lastUpdated = cachedSpecies.cachedAt;
-        _isUsingCachedData = true;
-        _cachedDataTime = cachedSpecies.cachedAt;
-      });
-      _rebuildTrendSignals();
-      _updateWidget();
-    }
+      if (cachedSpecies != null && cachedSpecies.species.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _totalDetections = cachedSpecies.total;
+          _speciesDataMap = cachedSpecies.species;
+          _isLoading = false;
+          _lastUpdated = cachedSpecies.cachedAt;
+          _isUsingCachedData = true;
+          _cachedDataTime = cachedSpecies.cachedAt;
+        });
+        _rebuildTrendSignals();
+        _updateWidget();
+      }
 
-    if (cachedPhotos != null && cachedPhotos.isNotEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _photos = cachedPhotos;
-        _loadingPhotos = false;
-      });
+      if (cachedPhotos != null && cachedPhotos.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _photos = cachedPhotos;
+          _loadingPhotos = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading cached data: $e');
     }
 
     // Then fetch fresh data in background
     unawaited(Future(() async {
-      await _fetchTodaySummaryFlexible();
-      await _fetchPhotoSnapshots();
-      await _loadTrendSummaries();
+      try {
+        await _fetchTodaySummaryFlexible();
+        await _fetchPhotoSnapshots();
+        await _loadTrendSummaries();
+      } catch (e) {
+        debugPrint('Error fetching fresh data: $e');
+      }
     }));
   }
 
