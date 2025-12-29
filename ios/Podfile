@@ -66,6 +66,8 @@ post_install do |installer|
 
     # Special handling for BoringSSL-GRPC which uses -G flag in assembly
     is_boringssl = target.name.include?('BoringSSL') || target.name.include?('grpc')
+    # Special handling for leveldb-library which has port namespace issues on newer Xcode
+    is_leveldb = target.name.include?('leveldb')
 
     target.build_configurations.each do |config|
       # Ensure all pods use iOS 13.0 minimum deployment target
@@ -80,6 +82,24 @@ post_install do |installer|
         config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
         if config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].is_a?(Array)
           config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'OPENSSL_NO_ASM=1'
+        end
+      end
+
+      # Fix leveldb-library port namespace issue on Xcode 15+
+      if is_leveldb
+        # Add the leveldb source directory to header search paths
+        config.build_settings['HEADER_SEARCH_PATHS'] ||= ['$(inherited)']
+        if config.build_settings['HEADER_SEARCH_PATHS'].is_a?(Array)
+          config.build_settings['HEADER_SEARCH_PATHS'] << '"${PODS_ROOT}/leveldb-library"'
+          config.build_settings['HEADER_SEARCH_PATHS'] << '"${PODS_ROOT}/leveldb-library/include"'
+        elsif config.build_settings['HEADER_SEARCH_PATHS'].is_a?(String)
+          config.build_settings['HEADER_SEARCH_PATHS'] += ' "${PODS_ROOT}/leveldb-library" "${PODS_ROOT}/leveldb-library/include"'
+        end
+        # Use C++17 for leveldb
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+        if config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].is_a?(Array)
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'LEVELDB_PLATFORM_POSIX=1'
         end
       end
 
@@ -131,6 +151,31 @@ post_install do |installer|
     if content.include?('-G')
       new_content = content.gsub(/-G\b/, '')
       File.write(script, new_content)
+    end
+  end
+
+  # Fix leveldb-library port namespace issue by patching source files
+  # The issue is that some files reference 'port::' without including port.h
+  leveldb_files_to_patch = [
+    "#{pods_root}/leveldb-library/db/version_set.h",
+    "#{pods_root}/leveldb-library/db/version_set.cc",
+    "#{pods_root}/leveldb-library/table/table_builder.cc",
+    "#{pods_root}/leveldb-library/db/db_impl.cc",
+    "#{pods_root}/leveldb-library/db/db_impl.h"
+  ]
+
+  leveldb_files_to_patch.each do |file|
+    next unless File.exist?(file)
+    content = File.read(file)
+    # Add port/port.h include if it uses port:: but doesn't include it
+    if content.include?('port::') && !content.include?('#include "port/port.h"')
+      # Find the last #include line and add port/port.h after it
+      if content =~ /(#include\s+["<][^">]+[">]\s*\n)(?!#include)/
+        new_content = content.sub(/(#include\s+["<][^">]+[">]\s*\n)(?!#include)/) do |match|
+          "#{match}#include \"port/port.h\"\n"
+        end
+        File.write(file, new_content)
+      end
     end
   end
 end
