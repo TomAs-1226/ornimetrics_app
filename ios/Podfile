@@ -153,6 +153,18 @@ post_install do |installer|
           phase.shell_script = phase.shell_script.gsub(/-G\b/, '')
         end
       end
+
+      # Strip -G from individual source file compiler flags (BoringSSL assembly files)
+      if phase.respond_to?(:files)
+        phase.files.each do |file|
+          if file.settings && file.settings['COMPILER_FLAGS']
+            flags = file.settings['COMPILER_FLAGS']
+            if flags.include?('-G')
+              file.settings['COMPILER_FLAGS'] = flags.gsub(/-G\b/, '').gsub(/\s+/, ' ').strip
+            end
+          end
+        end
+      end
     end
   end
 
