@@ -33,7 +33,7 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
   String? _error;
   bool _loading = true;
   late final AnimationController _controller =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
+  AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
 
   static const _kWeatherCacheKey = 'cached_weather_snapshot';
 
@@ -86,8 +86,19 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
       await prefs.setString(_kWeatherCacheKey, json.encode(res.toMap()));
       setState(() => _data = res);
     } catch (e) {
-      // If we have cached data, keep showing it and surface a message; otherwise show the error card.
-      setState(() => _error = _data != null ? 'Using cached weather. Latest error: ${e.toString()}' : e.toString());
+      debugPrint('Weather fetch failed: $e');
+      // Show user-friendly message instead of technical details
+      final errorStr = e.toString().toLowerCase();
+      String userMessage;
+      if (errorStr.contains('socket') || errorStr.contains('connection') || errorStr.contains('network')) {
+        userMessage = 'No internet connection';
+      } else if (errorStr.contains('timeout')) {
+        userMessage = 'Connection timed out';
+      } else {
+        userMessage = 'Could not load weather data';
+      }
+      // If we have cached data, keep showing it and surface a friendly message
+      setState(() => _error = _data != null ? 'Using cached weather • $userMessage' : userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -133,8 +144,8 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
             child: _loading
                 ? _buildLoadingCard()
                 : _error != null
-                    ? _buildErrorCard(_error!)
-                    : _buildDataCard(_data!),
+                ? _buildErrorCard(_error!)
+                : _buildDataCard(_data!),
           ),
           const SizedBox(height: 16),
           Text('Provider', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
@@ -154,9 +165,9 @@ class _EnvironmentScreenState extends State<EnvironmentScreen> with SingleTicker
               ),
               trailing: widget.onRequestLocation != null
                   ? ElevatedButton(
-                      onPressed: widget.onRequestLocation,
-                      child: const Text('Request access'),
-                    )
+                onPressed: widget.onRequestLocation,
+                child: const Text('Request access'),
+              )
                   : null,
             ),
           ),

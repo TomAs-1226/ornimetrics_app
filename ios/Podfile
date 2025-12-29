@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '18.6'
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -28,18 +28,10 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  # FlutterFire pulls in Swift pods. Static frameworks are generally the least painful option.
   use_frameworks! :linkage => :static
 
-  # IMPORTANT: do NOT enable `use_modular_headers!` globally.
-  # It can break header resolution in some pod targets.
-  # Only opt-in modular headers for the pods that need module maps under static linkage.
-  pod 'GoogleUtilities', :modular_headers => true
-  pod 'GoogleUtilities/Environment', :modular_headers => true
-  pod 'GoogleUtilities/UserDefaults', :modular_headers => true
-  pod 'GoogleUtilities/Network', :modular_headers => true
-  pod 'GoogleUtilities/AppDelegateSwizzler', :modular_headers => true
-  pod 'GoogleUtilities/Reachability', :modular_headers => true
+  # Use precompiled Firestore SDK to avoid build issues
+  pod 'FirebaseFirestore', :git => 'https://github.com/invertase/firestore-ios-sdk-frameworks.git', :tag => '10.25.0'
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
@@ -49,24 +41,54 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  # Fix gRPC-Core C++ template issue for Xcode 16.3+
+  # Patch ALL occurrences of CallSeqFactory missing template args
+  pods_root = installer.sandbox.root.to_s
+  grpc_files = Dir.glob("#{pods_root}/gRPC-Core/**/*.h") + Dir.glob("#{pods_root}/gRPC-C++/**/*.h")
+  grpc_files.each do |file_path|
+    next unless File.exist?(file_path)
+    content = File.read(file_path)
+    # Match Traits::template CallSeqFactory( without <>
+    if content =~ /Traits::template\s+CallSeqFactory\s*\(/
+      puts "Patching #{file_path} for Xcode 16.3+ compatibility..."
+      # Add <> after CallSeqFactory if missing
+      new_content = content.gsub(/Traits::template\s+CallSeqFactory\s*\(/, 'Traits::template CallSeqFactory<>(')
+      File.write(file_path, new_content)
+    end
+  end
+
+  # Apply settings at the project level
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+  end
+
+  # Also apply to the main Runner project
+  installer.aggregate_targets.each do |target|
+    target.xcconfigs.each do |config_name, config_file|
+      config_file.attributes['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      xcconfig_path = target.xcconfig_path(config_name)
+      config_file.save_as(xcconfig_path)
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
-      # On newer Xcodes, filelists can point at stale/absolute paths and break builds.
-      config.build_settings['USE_FILELISTS'] = 'NO'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      # Allow non-modular includes for Firebase plugins
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    end
 
-      # Some pods (or generated xcconfigs) can pick up an unsupported `-G` flag.
-      # Strip it everywhere to keep simulator builds working.
-      %w[OTHER_CFLAGS OTHER_CPLUSPLUSFLAGS OTHER_SWIFT_FLAGS].each do |key|
-        v = config.build_settings[key]
-        next if v.nil?
-
-        if v.is_a?(String)
-          flags = v.split(' ').reject { |f| f == '-G' || f.start_with?('-G') }
-          config.build_settings[key] = flags.join(' ')
-        elsif v.is_a?(Array)
-          config.build_settings[key] = v.reject { |f| f == '-G' || (f.respond_to?(:start_with?) && f.start_with?('-G')) }
+    # Fix BoringSSL-GRPC -GCC_WARN_INHIBIT_ALL_WARNINGS flag issue for Xcode 16+
+    target.build_phases.each do |phase|
+      if phase.respond_to?(:files)
+        phase.files.each do |file|
+          if file.settings && file.settings['COMPILER_FLAGS']
+            flags = file.settings['COMPILER_FLAGS'].split
+            flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
+            file.settings['COMPILER_FLAGS'] = flags.join(' ')
+          end
         end
       end
     end

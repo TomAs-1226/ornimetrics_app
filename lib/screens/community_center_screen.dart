@@ -347,7 +347,17 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
       return didAuth;
     } catch (e) {
       debugPrint('Local auth failed: $e');
-      if (mounted) setState(() => _status = 'Local auth failed: $e');
+      // Show user-friendly message instead of technical details
+      final errorStr = e.toString().toLowerCase();
+      String userMessage;
+      if (errorStr.contains('cancel') || errorStr.contains('user')) {
+        userMessage = 'Authentication cancelled';
+      } else if (errorStr.contains('locked') || errorStr.contains('attempt')) {
+        userMessage = 'Too many attempts. Please try again later.';
+      } else {
+        userMessage = 'Authentication failed. Please try again.';
+      }
+      if (mounted) setState(() => _status = userMessage);
       return false;
     } finally {
       _authInProgress = false;
@@ -390,7 +400,18 @@ class _CommunityCenterScreenState extends State<CommunityCenterScreen>
         _status = '';
       });
     } catch (e) {
-      setState(() => _status = 'Weather unavailable: $e');
+      debugPrint('Weather fetch failed: $e');
+      // Show user-friendly message instead of technical details
+      final errorStr = e.toString().toLowerCase();
+      String userMessage;
+      if (errorStr.contains('socket') || errorStr.contains('connection') || errorStr.contains('network')) {
+        userMessage = 'Weather unavailable - no internet connection';
+      } else if (errorStr.contains('timeout')) {
+        userMessage = 'Weather unavailable - connection timed out';
+      } else {
+        userMessage = 'Weather unavailable - please try again later';
+      }
+      setState(() => _status = userMessage);
     } finally {
       if (mounted) setState(() => _loadingWeather = false);
     }

@@ -57,5 +57,10 @@
 		<string>We use your photo library to attach photos to community posts.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>We save exported community images to your photo library when you choose to share them.</string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>fetch</string>
+			<string>remote-notification</string>
+		</array>
 	</dict>
 </plist>
