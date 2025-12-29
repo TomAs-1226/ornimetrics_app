@@ -49,6 +49,8 @@ dependencies:
   geolocator: ^12.0.0
   local_auth: ^2.3.0
   image: ^4.1.7
+  path_provider: ^2.1.2
+  share_plus: ^7.2.1
 
 # App Icon
 flutter_launcher_icons:

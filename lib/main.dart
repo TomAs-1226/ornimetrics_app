@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -2285,67 +2288,169 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           });
           return GestureDetector(
             onTap: () => FocusScope.of(context).unfocus(),
-            child: Scaffold(
-              appBar: AppBar(
-                title: const Text(
-                  'Ornimetrics Tracker',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                centerTitle: true,
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    onPressed: _navigateToSettings,
+            child: Stack(
+              children: [
+                Scaffold(
+                  appBar: AppBar(
+                    title: const Text(
+                      'Ornimetrics Tracker',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    centerTitle: true,
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.settings),
+                        onPressed: _navigateToSettings,
+                      ),
+                    ],
+                    bottom: TabBar(
+                      isScrollable: false,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      indicatorSize: TabBarIndicatorSize.label,
+                      labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                      unselectedLabelStyle: const TextStyle(fontSize: 10),
+                      onTap: (_) => FocusScope.of(context).unfocus(),
+                      tabs: const [
+                        Tab(icon: Icon(Icons.dashboard, size: 20), text: 'Home'),
+                        Tab(icon: Icon(Icons.photo_camera_back_outlined, size: 20), text: 'Photos'),
+                        Tab(icon: Icon(Icons.cloud_outlined, size: 20), text: 'Weather'),
+                        Tab(icon: Icon(Icons.groups_2_outlined, size: 20), text: 'Social'),
+                        Tab(icon: Icon(Icons.auto_awesome, size: 20), text: 'Tools'),
+                      ],
+                    ),
                   ),
-                ],
-                bottom: TabBar(
-                  isScrollable: false,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  indicatorSize: TabBarIndicatorSize.label,
-                  labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-                  unselectedLabelStyle: const TextStyle(fontSize: 10),
-                  onTap: (_) => FocusScope.of(context).unfocus(),
-                  tabs: const [
-                    Tab(icon: Icon(Icons.dashboard, size: 20), text: 'Home'),
-                    Tab(icon: Icon(Icons.photo_camera_back_outlined, size: 20), text: 'Photos'),
-                    Tab(icon: Icon(Icons.cloud_outlined, size: 20), text: 'Weather'),
-                    Tab(icon: Icon(Icons.groups_2_outlined, size: 20), text: 'Social'),
-                    Tab(icon: Icon(Icons.auto_awesome, size: 20), text: 'Tools'),
-                  ],
+                  body: TabBarView(
+                    children: [
+                      _buildDashboardTab(),
+                      _buildRecentDetectionsTab(),
+                      _buildEnvironmentTab(),
+                      CommunityCenterScreen(
+                        weatherProvider: _weatherProvider,
+                        latitude: _position?.latitude,
+                        longitude: _position?.longitude,
+                        locationStatus: _locationStatus,
+                        onRequestLocation: () => _captureLocation(force: true),
+                      ),
+                      _buildToolsTab(),
+                    ],
+                  ),
+                  floatingActionButton: _showFab
+                      ? FloatingActionButton(
+                          onPressed: () {
+                            safeSelectionHaptic();
+                            _scrollController.animateTo(
+                              0,
+                              duration: const Duration(milliseconds: 500),
+                              curve: Curves.easeOut,
+                            );
+                          },
+                          child: const Icon(Icons.arrow_upward),
+                        )
+                      : null,
+                ),
+                // Dynamic Island Timer
+                _buildDynamicIslandTimer(),
+              ],
+            ),
+          );
+          },
+        ),
+    );
+  }
+
+  Widget _buildDynamicIslandTimer() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: SessionTimerService.instance.isRunningNotifier,
+      builder: (context, isRunning, _) {
+        if (!isRunning) return const SizedBox.shrink();
+
+        return ValueListenableBuilder<int>(
+          valueListenable: SessionTimerService.instance.secondsNotifier,
+          builder: (context, seconds, _) {
+            return Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    safeLightHaptic();
+                    showDialog(context: context, builder: (_) => _SessionTimerDialog());
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.3),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Animated pulsing dot
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.5, end: 1.0),
+                          duration: const Duration(milliseconds: 800),
+                          builder: (context, value, child) {
+                            return Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(value),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.green.withOpacity(0.5 * value),
+                                    blurRadius: 4,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          onEnd: () {},
+                        ),
+                        const SizedBox(width: 10),
+                        // Bird icon
+                        const Icon(Icons.flutter_dash, color: Colors.white, size: 16),
+                        const SizedBox(width: 8),
+                        // Timer display
+                        Text(
+                          SessionTimerService.instance.formattedTime,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Pause/Stop indicator
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.touch_app, color: Colors.white70, size: 12),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              body: TabBarView(
-          children: [
-            _buildDashboardTab(),
-            _buildRecentDetectionsTab(),
-            _buildEnvironmentTab(),
-            CommunityCenterScreen(
-              weatherProvider: _weatherProvider,
-              latitude: _position?.latitude,
-              longitude: _position?.longitude,
-              locationStatus: _locationStatus,
-              onRequestLocation: () => _captureLocation(force: true),
-            ),
-            _buildToolsTab(),
-          ],
-        ),
-        floatingActionButton: _showFab
-            ? FloatingActionButton(
-          onPressed: () {
-            safeSelectionHaptic();
-            _scrollController.animateTo(
-              0,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
             );
           },
-          child: const Icon(Icons.arrow_upward),
-        )
-            : null,
-              ),
-            );
-          },
-        ),
+        );
+      },
     );
   }
 
@@ -6469,8 +6574,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
 
     try {
-      // Generate export data
-      final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd_HH-mm').format(now);
 
@@ -6481,54 +6584,125 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       if (format == 'csv') {
         extension = 'csv';
         mimeType = 'text/csv';
-        content = _generateCSVExport();
+        content = await _generateCSVExportFromFirebase();
       } else if (format == 'json') {
         extension = 'json';
         mimeType = 'application/json';
-        content = _generateJSONExport();
+        content = await _generateJSONExportFromFirebase();
       } else {
         extension = 'txt';
         mimeType = 'text/plain';
-        content = _generateTextReport();
+        content = await _generateTextReportFromFirebase();
       }
 
       final fileName = 'ornimetrics_export_$dateStr.$extension';
-      final bytes = Uint8List.fromList(utf8.encode(content));
 
-      // Use file_selector to save
-      final FileSaveLocation? result = await getSaveLocation(
-        suggestedName: fileName,
-        acceptedTypeGroups: [
-          XTypeGroup(label: format.toUpperCase(), extensions: [extension], mimeTypes: [mimeType]),
-        ],
-      );
-
-      if (result != null) {
-        final file = XFile.fromData(bytes, name: fileName, mimeType: mimeType);
-        await file.saveTo(result.path);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('Saved to ${result.path.split('/').last}')),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+      // Get the downloads directory
+      Directory? directory;
+      if (Platform.isAndroid) {
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          directory = await getExternalStorageDirectory();
         }
+      } else if (Platform.isIOS) {
+        directory = await getApplicationDocumentsDirectory();
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-        }
+        directory = await getDownloadsDirectory();
+      }
+
+      if (directory == null) {
+        throw Exception('Could not access storage');
+      }
+
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsString(content);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+
+        // Show success with share option
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          builder: (context) => Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+                ),
+                const SizedBox(height: 16),
+                const Text('Export Successful!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(
+                  'Saved to: $fileName',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    Platform.isAndroid ? 'Downloads folder' : 'Documents folder',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await Share.shareXFiles(
+                            [XFile(filePath)],
+                            subject: 'Ornimetrics Export',
+                            text: 'My bird detection data from Ornimetrics',
+                          );
+                        },
+                        icon: const Icon(Icons.share),
+                        label: const Text('Share'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
       }
     } catch (e) {
+      debugPrint('Export error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -6537,7 +6711,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               children: [
                 const Icon(Icons.error, color: Colors.white),
                 const SizedBox(width: 12),
-                const Text('Export failed. Please try again.'),
+                Expanded(child: Text('Export failed: ${e.toString().replaceAll('Exception: ', '')}')),
               ],
             ),
             backgroundColor: Colors.red,
@@ -6546,6 +6720,172 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         );
       }
     }
+  }
+
+  Future<String> _generateCSVExportFromFirebase() async {
+    final buffer = StringBuffer();
+    final user = FirebaseAuth.instance.currentUser;
+    final db = primaryDatabase().ref();
+
+    buffer.writeln('Ornimetrics Detection Export');
+    buffer.writeln('Generated: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}');
+    if (user != null) buffer.writeln('User: ${user.email}');
+    buffer.writeln('');
+    buffer.writeln('Date,Time,Species,Scientific Name,Confidence,Source,Location,Weather');
+
+    // Fetch user field detections
+    if (user != null) {
+      final snap = await db.child('users/${user.uid}/field_detections').get();
+      if (snap.exists && snap.value is Map) {
+        final data = Map<dynamic, dynamic>.from(snap.value as Map);
+        for (final entry in data.entries) {
+          final d = entry.value as Map<dynamic, dynamic>;
+          final date = d['date'] ?? '';
+          final time = d['time_of_day'] ?? '';
+          final species = d['species'] ?? '';
+          final scientific = d['scientific_name'] ?? '';
+          final conf = ((d['confidence'] ?? 0) * 100).toStringAsFixed(1);
+          final source = 'Field';
+          final loc = d['location'] != null ? 'Yes' : 'No';
+          final weather = d['weather'] != null ? (d['weather']['condition'] ?? 'Yes') : 'No';
+          buffer.writeln('$date,$time,"$species","$scientific",$conf%,$source,$loc,$weather');
+        }
+      }
+    }
+
+    // Fetch photo snapshots
+    final photosSnap = await db.child('photo_snapshots').limitToLast(100).get();
+    if (photosSnap.exists && photosSnap.value is Map) {
+      final data = Map<dynamic, dynamic>.from(photosSnap.value as Map);
+      for (final entry in data.entries) {
+        final d = entry.value as Map<dynamic, dynamic>;
+        final ts = d['timestamp'] is int ? DateTime.fromMillisecondsSinceEpoch(d['timestamp']) : DateTime.now();
+        final date = DateFormat('yyyy-MM-dd').format(ts);
+        final time = DateFormat('h:mm a').format(ts);
+        final species = d['species'] ?? d['detected_species'] ?? '';
+        final scientific = '';
+        final conf = ((d['confidence'] ?? 0) * 100).toStringAsFixed(1);
+        buffer.writeln('$date,$time,"$species","$scientific",$conf%,Feeder,No,No');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  Future<String> _generateJSONExportFromFirebase() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final db = primaryDatabase().ref();
+    final List<Map<String, dynamic>> detections = [];
+
+    // Fetch user field detections
+    if (user != null) {
+      final snap = await db.child('users/${user.uid}/field_detections').get();
+      if (snap.exists && snap.value is Map) {
+        final data = Map<dynamic, dynamic>.from(snap.value as Map);
+        for (final entry in data.entries) {
+          detections.add({
+            'id': entry.key,
+            'source': 'field',
+            ...Map<String, dynamic>.from(entry.value as Map),
+          });
+        }
+      }
+    }
+
+    // Fetch photo snapshots
+    final photosSnap = await db.child('photo_snapshots').limitToLast(100).get();
+    if (photosSnap.exists && photosSnap.value is Map) {
+      final data = Map<dynamic, dynamic>.from(photosSnap.value as Map);
+      for (final entry in data.entries) {
+        detections.add({
+          'id': entry.key,
+          'source': 'feeder',
+          ...Map<String, dynamic>.from(entry.value as Map),
+        });
+      }
+    }
+
+    final exportData = {
+      'export_info': {
+        'app': 'Ornimetrics',
+        'version': '2.1.0',
+        'generated': DateTime.now().toIso8601String(),
+        'user': user?.email,
+      },
+      'summary': {
+        'total_detections': detections.length,
+        'field_detections': detections.where((d) => d['source'] == 'field').length,
+        'feeder_detections': detections.where((d) => d['source'] == 'feeder').length,
+      },
+      'detections': detections,
+    };
+
+    return const JsonEncoder.withIndent('  ').convert(exportData);
+  }
+
+  Future<String> _generateTextReportFromFirebase() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final db = primaryDatabase().ref();
+    final buffer = StringBuffer();
+
+    buffer.writeln('=' * 50);
+    buffer.writeln('ORNIMETRICS DETECTION REPORT');
+    buffer.writeln('=' * 50);
+    buffer.writeln('');
+    buffer.writeln('Generated: ${DateFormat('MMMM d, yyyy at h:mm a').format(DateTime.now())}');
+    if (user != null) buffer.writeln('Account: ${user.email}');
+    buffer.writeln('');
+
+    int fieldCount = 0;
+    int feederCount = 0;
+    Map<String, int> speciesCounts = {};
+
+    // Count field detections
+    if (user != null) {
+      final snap = await db.child('users/${user.uid}/field_detections').get();
+      if (snap.exists && snap.value is Map) {
+        final data = Map<dynamic, dynamic>.from(snap.value as Map);
+        fieldCount = data.length;
+        for (final entry in data.entries) {
+          final d = entry.value as Map;
+          final species = d['species']?.toString() ?? 'Unknown';
+          speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+        }
+      }
+    }
+
+    // Count feeder detections
+    final photosSnap = await db.child('photo_snapshots').get();
+    if (photosSnap.exists && photosSnap.value is Map) {
+      final data = Map<dynamic, dynamic>.from(photosSnap.value as Map);
+      feederCount = data.length;
+      for (final entry in data.entries) {
+        final d = entry.value as Map;
+        final species = (d['species'] ?? d['detected_species'])?.toString() ?? 'Unknown';
+        speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+      }
+    }
+
+    buffer.writeln('SUMMARY');
+    buffer.writeln('-' * 30);
+    buffer.writeln('Total Detections: ${fieldCount + feederCount}');
+    buffer.writeln('  - Field Observations: $fieldCount');
+    buffer.writeln('  - Feeder Detections: $feederCount');
+    buffer.writeln('Unique Species: ${speciesCounts.length}');
+    buffer.writeln('');
+
+    buffer.writeln('SPECIES BREAKDOWN');
+    buffer.writeln('-' * 30);
+    final sortedSpecies = speciesCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final entry in sortedSpecies) {
+      buffer.writeln('${entry.key}: ${entry.value} detections');
+    }
+    buffer.writeln('');
+    buffer.writeln('=' * 50);
+    buffer.writeln('Report generated by Ornimetrics v2.1.0');
+
+    return buffer.toString();
   }
 
   String _generateCSVExport() {
@@ -7134,116 +7474,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 },
               ),
             ),
-          const Divider(),
-          // Tools Section
-          _buildSectionHeader(context, Icons.build_outlined, 'Tools'),
-          ListTile(
-            leading: const Icon(Icons.analytics_outlined),
-            title: const Text('Detection statistics'),
-            subtitle: const Text('View detailed analytics'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              safeLightHaptic();
-              _showStatisticsDialog();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('Export data'),
-            subtitle: const Text('Save to device storage'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              safeLightHaptic();
-              _showExportDialog();
-            },
-          ),
-          // Session timer with live status
-          ValueListenableBuilder<bool>(
-            valueListenable: SessionTimerService.instance.isRunningNotifier,
-            builder: (_, isRunning, __) => ValueListenableBuilder<int>(
-              valueListenable: SessionTimerService.instance.secondsNotifier,
-              builder: (_, seconds, __) => ListTile(
-                leading: Icon(
-                  Icons.timer_outlined,
-                  color: isRunning ? Colors.green : null,
-                ),
-                title: Row(
-                  children: [
-                    const Text('Session timer'),
-                    if (isRunning) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.green.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              SessionTimerService.instance.shortFormat,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.green,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                subtitle: Text(isRunning ? 'Timer is running' : 'Track bird watching time'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  safeLightHaptic();
-                  _showSessionTimerDialog();
-                },
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.calculate_outlined),
-            title: const Text('Detection calculator'),
-            subtitle: const Text('Predict activity patterns'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              safeLightHaptic();
-              _showDetectionCalculatorDialog();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.compare_arrows),
-            title: const Text('Species comparison'),
-            subtitle: const Text('Compare detection trends'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              safeLightHaptic();
-              _showSpeciesComparisonDialog();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.calendar_month),
-            title: const Text('Activity calendar'),
-            subtitle: const Text('View detection heatmap'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              safeLightHaptic();
-              _showActivityCalendarDialog();
-            },
-          ),
           const Divider(),
           // AI Tools Section
           _buildSectionHeader(context, Icons.auto_awesome, 'AI Tools'),
