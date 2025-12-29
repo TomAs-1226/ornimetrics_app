@@ -339,7 +339,7 @@ struct OrnimetricsWidgetEntryView: View {
         uniqueSpecies: 12,
         lastDetection: "Blue Jay",
         topSpecies: "American Robin",
-        lastUpdated: Date()
+        lastUpdated: ISO8601DateFormatter().string(from: Date())
     ))
 }
 
@@ -351,7 +351,7 @@ struct OrnimetricsWidgetEntryView: View {
         uniqueSpecies: 12,
         lastDetection: "Blue Jay",
         topSpecies: "American Robin",
-        lastUpdated: Date()
+        lastUpdated: ISO8601DateFormatter().string(from: Date())
     ))
 }
 
@@ -363,6 +363,6 @@ struct OrnimetricsWidgetEntryView: View {
         uniqueSpecies: 12,
         lastDetection: "Blue Jay",
         topSpecies: "American Robin",
-        lastUpdated: Date()
+        lastUpdated: ISO8601DateFormatter().string(from: Date())
     ))
 }
