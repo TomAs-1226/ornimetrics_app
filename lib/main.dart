@@ -1,12 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -2424,7 +2421,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                         const SizedBox(width: 8),
                         // Timer display
                         Text(
-                          SessionTimerService.instance.formattedTime,
+                          SessionTimerService.instance.formatTime(),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
@@ -6596,110 +6593,40 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       }
 
       final fileName = 'ornimetrics_export_$dateStr.$extension';
+      final bytes = Uint8List.fromList(utf8.encode(content));
 
-      // Get the downloads directory
-      Directory? directory;
-      if (Platform.isAndroid) {
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) {
-          directory = await getExternalStorageDirectory();
-        }
-      } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
-      } else {
-        directory = await getDownloadsDirectory();
-      }
+      // Use file_selector to save
+      final FileSaveLocation? result = await getSaveLocation(
+        suggestedName: fileName,
+        acceptedTypeGroups: [
+          XTypeGroup(label: format.toUpperCase(), extensions: [extension], mimeTypes: [mimeType]),
+        ],
+      );
 
-      if (directory == null) {
-        throw Exception('Could not access storage');
-      }
+      if (result != null) {
+        final file = XFile.fromData(bytes, name: fileName, mimeType: mimeType);
+        await file.saveTo(result.path);
 
-      final filePath = '${directory.path}/$fileName';
-      final file = File(filePath);
-      await file.writeAsString(content);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-
-        // Show success with share option
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-          builder: (context) => Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-                ),
-                const SizedBox(height: 16),
-                const Text('Export Successful!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text(
-                  'Saved to: $fileName',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    Platform.isAndroid ? 'Downloads folder' : 'Documents folder',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          await Share.shareXFiles(
-                            [XFile(filePath)],
-                            subject: 'Ornimetrics Export',
-                            text: 'My bird detection data from Ornimetrics',
-                          );
-                        },
-                        icon: const Icon(Icons.share),
-                        label: const Text('Share'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.check),
-                        label: const Text('Done'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+        if (mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Saved: ${result.path.split('/').last}')),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
             ),
-          ),
-        );
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars();
+        }
       }
     } catch (e) {
       debugPrint('Export error: $e');
