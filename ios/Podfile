@@ -31,10 +31,8 @@ target 'Runner' do
   # FlutterFire pulls in Swift pods. Static frameworks are generally the least painful option.
   use_frameworks! :linkage => :static
 
-  # Enable modular headers for pods that need them (without version constraints)
-  # This allows CocoaPods to resolve versions from other dependencies
-  pod 'GTMSessionFetcher/Core', :modular_headers => true
-  pod 'GoogleUtilities', :modular_headers => true
+  # Enable modular headers globally - required for Firebase with static frameworks
+  use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
