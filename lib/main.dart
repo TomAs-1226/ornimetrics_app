@@ -243,6 +243,293 @@ class LocalCacheService {
   }
 }
 
+// ─────────────────────────────────────────────
+// Species Info Service - Fetches real data from Firebase + ChatGPT
+// ─────────────────────────────────────────────
+class SpeciesInfoService {
+  static final SpeciesInfoService instance = SpeciesInfoService._();
+  SpeciesInfoService._();
+
+  // Cache for species info (latin name, description, family)
+  final Map<String, Map<String, dynamic>> _speciesInfoCache = {};
+  static const String _cacheKey = 'species_info_cache';
+
+  /// Load cached species info from SharedPreferences
+  Future<void> loadCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_cacheKey);
+      if (data != null) {
+        final decoded = json.decode(data) as Map<String, dynamic>;
+        decoded.forEach((key, value) {
+          if (value is Map) {
+            _speciesInfoCache[key] = Map<String, dynamic>.from(value);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('SpeciesInfoService: Failed to load cache: $e');
+    }
+  }
+
+  /// Save species info cache to SharedPreferences
+  Future<void> _saveCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cacheKey, json.encode(_speciesInfoCache));
+    } catch (e) {
+      debugPrint('SpeciesInfoService: Failed to save cache: $e');
+    }
+  }
+
+  /// Get species info from cache or fetch from ChatGPT
+  Future<Map<String, dynamic>> getSpeciesInfo(String speciesName) async {
+    final normalized = speciesName.trim();
+
+    // Return from cache if available
+    if (_speciesInfoCache.containsKey(normalized)) {
+      return _speciesInfoCache[normalized]!;
+    }
+
+    // Fetch from ChatGPT
+    try {
+      final info = await _fetchFromChatGPT(normalized);
+      _speciesInfoCache[normalized] = info;
+      await _saveCache();
+      return info;
+    } catch (e) {
+      debugPrint('SpeciesInfoService: Failed to fetch from ChatGPT: $e');
+      // Return minimal info if API fails
+      return {
+        'name': normalized,
+        'scientific_name': '',
+        'family': 'Unknown',
+        'description': 'Information not available',
+      };
+    }
+  }
+
+  /// Fetch species info from ChatGPT API
+  Future<Map<String, dynamic>> _fetchFromChatGPT(String speciesName) async {
+    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+
+    if (apiKey.isEmpty) {
+      return {
+        'name': speciesName,
+        'scientific_name': '',
+        'family': 'Unknown',
+        'description': 'API key not configured',
+      };
+    }
+
+    final response = await http.post(
+      Uri.parse('https://api.openai.com/v1/chat/completions'),
+      headers: {
+        'Authorization': 'Bearer $apiKey',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'model': 'gpt-4o-mini',
+        'messages': [
+          {
+            'role': 'system',
+            'content': '''You are a bird expert. When given a bird species name, respond with ONLY a JSON object (no markdown, no code blocks) containing:
+- "scientific_name": the Latin/scientific name
+- "family": the taxonomic family name
+- "description": a 2-3 sentence description of the bird including habitat, diet, and interesting facts
+- "migration_status": one of "resident", "migratory", "partial_migrant"
+- "typical_months": array of month numbers (1-12) when this bird is commonly seen in North America
+
+Example response format:
+{"scientific_name":"Cardinalis cardinalis","family":"Cardinalidae","description":"The Northern Cardinal...","migration_status":"resident","typical_months":[1,2,3,4,5,6,7,8,9,10,11,12]}'''
+          },
+          {
+            'role': 'user',
+            'content': 'Tell me about: $speciesName'
+          }
+        ],
+        'max_tokens': 300,
+        'temperature': 0.3,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final content = data['choices'][0]['message']['content'] as String;
+
+      // Parse the JSON response
+      try {
+        final parsed = jsonDecode(content.trim());
+        return {
+          'name': speciesName,
+          'scientific_name': parsed['scientific_name'] ?? '',
+          'family': parsed['family'] ?? 'Unknown',
+          'description': parsed['description'] ?? '',
+          'migration_status': parsed['migration_status'] ?? 'unknown',
+          'typical_months': parsed['typical_months'] ?? <int>[],
+        };
+      } catch (e) {
+        debugPrint('SpeciesInfoService: Failed to parse ChatGPT response: $content');
+        return {
+          'name': speciesName,
+          'scientific_name': '',
+          'family': 'Unknown',
+          'description': content,
+          'migration_status': 'unknown',
+          'typical_months': <int>[],
+        };
+      }
+    } else {
+      throw Exception('ChatGPT API error: ${response.statusCode}');
+    }
+  }
+
+  /// Get all cached species info
+  Map<String, Map<String, dynamic>> get cachedSpecies => Map.unmodifiable(_speciesInfoCache);
+
+  /// Check if species is in cache
+  bool hasInfo(String speciesName) => _speciesInfoCache.containsKey(speciesName.trim());
+
+  /// Fetch all species from Firebase detections
+  Future<List<Map<String, dynamic>>> fetchAllSpeciesFromFirebase() async {
+    final List<Map<String, dynamic>> speciesList = [];
+
+    try {
+      final db = FirebaseDatabase.instanceFor(app: Firebase.app()).ref();
+
+      // Fetch from photo_snapshots to get detected species
+      final photosSnap = await db.child('photo_snapshots').orderByChild('timestamp').limitToLast(500).get();
+
+      final Map<String, int> speciesCounts = {};
+      final Map<String, int> lastSeenTimestamp = {};
+
+      if (photosSnap.exists && photosSnap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(photosSnap.value as Map);
+        m.forEach((key, value) {
+          if (value is Map) {
+            final species = value['species']?.toString();
+            if (species != null && species.isNotEmpty) {
+              speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+              final ts = value['timestamp'];
+              int timestamp = 0;
+              if (ts is int) timestamp = ts;
+              else if (ts is double) timestamp = ts.toInt();
+              if (timestamp > (lastSeenTimestamp[species] ?? 0)) {
+                lastSeenTimestamp[species] = timestamp;
+              }
+            }
+          }
+        });
+      }
+
+      // Also check detections summary for counts
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final summarySnap = await db.child('detections/$today/session_1/summary').get();
+      if (summarySnap.exists && summarySnap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(summarySnap.value as Map);
+        m.forEach((key, value) {
+          if (key is String && value is num) {
+            speciesCounts[key] = (speciesCounts[key] ?? 0) + value.toInt();
+          }
+        });
+      }
+
+      // Build species list with info
+      for (final species in speciesCounts.keys) {
+        final info = await getSpeciesInfo(species);
+        speciesList.add({
+          'name': species,
+          'scientific_name': info['scientific_name'] ?? '',
+          'family': info['family'] ?? 'Unknown',
+          'description': info['description'] ?? '',
+          'migration_status': info['migration_status'] ?? 'unknown',
+          'typical_months': info['typical_months'] ?? <int>[],
+          'count': speciesCounts[species] ?? 0,
+          'last_seen': lastSeenTimestamp[species] ?? 0,
+        });
+      }
+
+      // Sort by count descending
+      speciesList.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+
+    } catch (e) {
+      debugPrint('SpeciesInfoService: Failed to fetch from Firebase: $e');
+    }
+
+    return speciesList;
+  }
+
+  /// Get migration status for all detected species
+  Future<List<Map<String, dynamic>>> getMigrationData() async {
+    final speciesList = await fetchAllSpeciesFromFirebase();
+    final currentMonth = DateTime.now().month;
+
+    return speciesList.map((species) {
+      final status = species['migration_status'] as String? ?? 'unknown';
+      final typicalMonths = (species['typical_months'] as List?)?.cast<int>() ?? <int>[];
+
+      // Calculate presence probability based on typical months
+      double presence = 0.5;
+      String statusText = 'Present';
+      Color statusColor = Colors.green;
+
+      if (typicalMonths.isNotEmpty) {
+        if (typicalMonths.contains(currentMonth)) {
+          // Check if we're at the edge of their season
+          final prevMonth = currentMonth == 1 ? 12 : currentMonth - 1;
+          final nextMonth = currentMonth == 12 ? 1 : currentMonth + 1;
+
+          if (!typicalMonths.contains(prevMonth) && typicalMonths.contains(nextMonth)) {
+            statusText = 'Arriving';
+            statusColor = Colors.blue;
+            presence = 0.6;
+          } else if (typicalMonths.contains(prevMonth) && !typicalMonths.contains(nextMonth)) {
+            statusText = 'Departing';
+            statusColor = Colors.orange;
+            presence = 0.4;
+          } else {
+            statusText = 'Peak season';
+            statusColor = Colors.green;
+            presence = 0.9;
+          }
+        } else {
+          // Not in typical months
+          final nextArrival = typicalMonths.where((m) => m > currentMonth).toList();
+          if (nextArrival.isNotEmpty) {
+            final monthsUntil = nextArrival.first - currentMonth;
+            if (monthsUntil <= 2) {
+              statusText = 'Arriving soon';
+              statusColor = Colors.cyan;
+              presence = 0.3;
+            } else {
+              statusText = 'Not in season';
+              statusColor = Colors.grey;
+              presence = 0.1;
+            }
+          } else {
+            statusText = 'Gone for season';
+            statusColor = Colors.red;
+            presence = 0.1;
+          }
+        }
+      }
+
+      if (status == 'resident') {
+        statusText = 'Year-round';
+        statusColor = Colors.green;
+        presence = 0.85;
+      }
+
+      return {
+        ...species,
+        'status_text': statusText,
+        'status_color': statusColor,
+        'presence': presence,
+      };
+    }).toList();
+  }
+}
+
 class DetectionPhoto {
   final String url;
   final DateTime timestamp;
@@ -516,6 +803,13 @@ void main() async {
   if (savedTypes != null) {
     liveUpdateTypesNotifier.value = savedTypes;
   }
+
+  // Load Model Improvement Program opt-in status
+  modelImprovementOptInNotifier.value = prefs.getBool('model_improvement_opt_in') ?? false;
+  imagesContributedNotifier.value = prefs.getInt('images_contributed') ?? 0;
+
+  // Load species info cache for ChatGPT integration
+  await SpeciesInfoService.instance.loadCache();
 
   await NotificationsService.instance.load();
   await MaintenanceRulesEngine.instance.load();
@@ -8079,38 +8373,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
       isScrollControlled: true,
       backgroundColor: colorScheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Row(children: [Icon(Icons.flight, color: Colors.blue, size: 28), const SizedBox(width: 12), const Text('Migration Tracker', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
-            const SizedBox(height: 8),
-            Text('Track seasonal bird migrations in your area', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 20),
-            _buildMigrationItem(colorScheme, 'Ruby-throated Hummingbird', 'Arriving soon', Colors.green, 0.75),
-            _buildMigrationItem(colorScheme, 'Baltimore Oriole', 'Peak season', Colors.orange, 0.95),
-            _buildMigrationItem(colorScheme, 'Indigo Bunting', 'Arriving', Colors.blue, 0.5),
-            _buildMigrationItem(colorScheme, 'Rose-breasted Grosbeak', 'Departing soon', Colors.red, 0.3),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                children: [
-                  Icon(Icons.notifications_active, color: Colors.purple, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('Enable alerts for rare migrants in your area', style: TextStyle(fontSize: 13))),
-                  Switch(value: false, onChanged: (_) {}),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
+      builder: (context) => _MigrationTrackerSheet(),
     );
   }
 
@@ -8144,14 +8407,6 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
   void _showSpeciesLibraryDialog(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final species = [
-      {'name': 'Northern Cardinal', 'scientific': 'Cardinalis cardinalis', 'family': 'Cardinalidae', 'seen': true},
-      {'name': 'Blue Jay', 'scientific': 'Cyanocitta cristata', 'family': 'Corvidae', 'seen': true},
-      {'name': 'American Robin', 'scientific': 'Turdus migratorius', 'family': 'Turdidae', 'seen': true},
-      {'name': 'Scarlet Tanager', 'scientific': 'Piranga olivacea', 'family': 'Cardinalidae', 'seen': false},
-      {'name': 'Painted Bunting', 'scientific': 'Passerina ciris', 'family': 'Cardinalidae', 'seen': false},
-      {'name': 'Baltimore Oriole', 'scientific': 'Icterus galbula', 'family': 'Icteridae', 'seen': true},
-    ];
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -8162,73 +8417,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
-        builder: (_, controller) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
-                  const SizedBox(height: 20),
-                  Row(children: [Icon(Icons.library_books, color: colorScheme.primary, size: 28), const SizedBox(width: 12), const Text('Species Library', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
-                  const SizedBox(height: 12),
-                  TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search species...',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                controller: controller,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: species.length,
-                itemBuilder: (_, i) {
-                  final s = species[i];
-                  final seen = s['seen'] as bool;
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: seen ? Colors.green.withOpacity(0.05) : colorScheme.surfaceVariant.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(12),
-                      border: seen ? Border.all(color: Colors.green.withOpacity(0.2)) : null,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(color: colorScheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
-                          child: Icon(Icons.flutter_dash, color: colorScheme.primary),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(s['name'] as String, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(s['scientific'] as String, style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
-                              Text(s['family'] as String, style: TextStyle(fontSize: 10, color: colorScheme.primary)),
-                            ],
-                          ),
-                        ),
-                        if (seen) Icon(Icons.check_circle, color: Colors.green, size: 22),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+        builder: (_, controller) => _SpeciesLibrarySheet(scrollController: controller),
       ),
     );
   }
@@ -8368,6 +8557,461 @@ class BirdDetectionService {
         {'species': species[(random.nextInt(species.length))]['name'], 'confidence': confidence - 0.3 - random.nextDouble() * 0.1},
       ],
     };
+  }
+}
+
+// ─────────────────────────────────────────────
+// Migration Tracker Sheet - Real Data from Firebase
+// ─────────────────────────────────────────────
+class _MigrationTrackerSheet extends StatefulWidget {
+  @override
+  State<_MigrationTrackerSheet> createState() => _MigrationTrackerSheetState();
+}
+
+class _MigrationTrackerSheetState extends State<_MigrationTrackerSheet> {
+  List<Map<String, dynamic>> _migrationData = [];
+  bool _isLoading = true;
+  bool _alertsEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMigrationData();
+    _loadAlertPreference();
+  }
+
+  Future<void> _loadMigrationData() async {
+    try {
+      final data = await SpeciesInfoService.instance.getMigrationData();
+      if (mounted) {
+        setState(() {
+          _migrationData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadAlertPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _alertsEnabled = prefs.getBool('migration_alerts_enabled') ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleAlerts(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('migration_alerts_enabled', value);
+    setState(() => _alertsEnabled = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final currentMonth = DateFormat('MMMM').format(DateTime.now());
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Icon(Icons.flight, color: Colors.blue, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Migration Tracker', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text('$currentMonth • Based on your detections', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: CircularProgressIndicator(),
+            )
+          else if (_migrationData.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(16)),
+              child: Column(
+                children: [
+                  Icon(Icons.search_off, size: 48, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                  const SizedBox(height: 12),
+                  Text('No species detected yet', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+                  const SizedBox(height: 4),
+                  Text('Migration data will appear once birds are detected at your feeder', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            )
+          else
+            ...(_migrationData.take(6).map((species) {
+              final statusColor = species['status_color'] as Color? ?? Colors.grey;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(species['name'] as String? ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.w600)),
+                              if ((species['scientific_name'] as String?)?.isNotEmpty ?? false)
+                                Text(species['scientific_name'] as String, style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                          child: Text(species['status_text'] as String? ?? 'Unknown', style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: (species['presence'] as double?) ?? 0.5,
+                              backgroundColor: colorScheme.surfaceVariant,
+                              color: statusColor,
+                              minHeight: 6,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('${species['count'] ?? 0} seen', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }).toList()),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: Row(
+              children: [
+                Icon(Icons.notifications_active, color: Colors.purple, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Alert me when new species arrive', style: TextStyle(fontSize: 13))),
+                Switch(value: _alertsEnabled, activeColor: Colors.purple, onChanged: _toggleAlerts),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Species Library Sheet - Real Data from Firebase + ChatGPT
+// ─────────────────────────────────────────────
+class _SpeciesLibrarySheet extends StatefulWidget {
+  final ScrollController scrollController;
+  const _SpeciesLibrarySheet({required this.scrollController});
+
+  @override
+  State<_SpeciesLibrarySheet> createState() => _SpeciesLibrarySheetState();
+}
+
+class _SpeciesLibrarySheetState extends State<_SpeciesLibrarySheet> {
+  List<Map<String, dynamic>> _allSpecies = [];
+  List<Map<String, dynamic>> _filteredSpecies = [];
+  bool _isLoading = true;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSpecies();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSpecies() async {
+    try {
+      final species = await SpeciesInfoService.instance.fetchAllSpeciesFromFirebase();
+      if (mounted) {
+        setState(() {
+          _allSpecies = species;
+          _filteredSpecies = species;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _filterSpecies(String query) {
+    setState(() {
+      _searchQuery = query.toLowerCase();
+      if (_searchQuery.isEmpty) {
+        _filteredSpecies = _allSpecies;
+      } else {
+        _filteredSpecies = _allSpecies.where((s) {
+          final name = (s['name'] as String? ?? '').toLowerCase();
+          final scientific = (s['scientific_name'] as String? ?? '').toLowerCase();
+          final family = (s['family'] as String? ?? '').toLowerCase();
+          return name.contains(_searchQuery) || scientific.contains(_searchQuery) || family.contains(_searchQuery);
+        }).toList();
+      }
+    });
+  }
+
+  void _showSpeciesDetail(Map<String, dynamic> species) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(color: colorScheme.primaryContainer, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(Icons.flutter_dash, color: colorScheme.primary, size: 32),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(species['name'] as String? ?? 'Unknown', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      if ((species['scientific_name'] as String?)?.isNotEmpty ?? false)
+                        Text(species['scientific_name'] as String, style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
+                      Text(species['family'] as String? ?? 'Unknown family', style: TextStyle(fontSize: 12, color: colorScheme.primary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome, size: 16, color: Colors.purple),
+                      const SizedBox(width: 8),
+                      Text('About this species', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    species['description'] as String? ?? 'No description available.',
+                    style: TextStyle(fontSize: 14, height: 1.5, color: colorScheme.onSurface),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _buildStatChip(colorScheme, Icons.visibility, '${species['count'] ?? 0} detections', Colors.blue),
+                const SizedBox(width: 12),
+                if (species['last_seen'] != null && (species['last_seen'] as int) > 0)
+                  _buildStatChip(colorScheme, Icons.access_time, 'Last: ${_formatLastSeen(species['last_seen'] as int)}', Colors.green),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatLastSeen(int timestamp) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d').format(dt);
+  }
+
+  Widget _buildStatChip(ColorScheme colorScheme, IconData icon, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Icon(Icons.library_books, color: colorScheme.primary, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Species Library', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text('${_allSpecies.length} species detected', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchController,
+                onChanged: _filterSpecies,
+                decoration: InputDecoration(
+                  hintText: 'Search species...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); _filterSpecies(''); })
+                      : null,
+                  filled: true,
+                  fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _filteredSpecies.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, size: 48, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                          const SizedBox(height: 12),
+                          Text(
+                            _searchQuery.isNotEmpty ? 'No species match "$_searchQuery"' : 'No species detected yet',
+                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: widget.scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: _filteredSpecies.length,
+                      itemBuilder: (_, i) {
+                        final s = _filteredSpecies[i];
+                        final count = s['count'] as int? ?? 0;
+                        return GestureDetector(
+                          onTap: () => _showSpeciesDetail(s),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.green.withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(color: colorScheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
+                                  child: Icon(Icons.flutter_dash, color: colorScheme.primary),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(s['name'] as String? ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      if ((s['scientific_name'] as String?)?.isNotEmpty ?? false)
+                                        Text(s['scientific_name'] as String, style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
+                                      Text(s['family'] as String? ?? 'Unknown', style: TextStyle(fontSize: 10, color: colorScheme.primary)),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                      child: Text('$count', style: TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.bold)),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
   }
 }
 
@@ -8681,6 +9325,9 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
           };
           await db.child('training_pool').push().set(trainingData);
           imagesContributedNotifier.value++;
+          // Persist the count
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('images_contributed', imagesContributedNotifier.value);
           contributedToTraining = true;
         } catch (_) {
           // Continue even if training upload fails
