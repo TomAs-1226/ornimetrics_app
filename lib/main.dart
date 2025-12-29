@@ -397,16 +397,37 @@ Example response format:
     final List<Map<String, dynamic>> speciesList = [];
 
     try {
-      final db = FirebaseDatabase.instanceFor(app: Firebase.app()).ref();
-
-      // Fetch from photo_snapshots to get detected species
-      final photosSnap = await db.child('photo_snapshots').orderByChild('timestamp').limitToLast(500).get();
+      final db = primaryDatabase().ref();
 
       final Map<String, int> speciesCounts = {};
       final Map<String, int> lastSeenTimestamp = {};
 
+      // Fetch from photo_snapshots (Pi detections)
+      final photosSnap = await db.child('photo_snapshots').get();
       if (photosSnap.exists && photosSnap.value is Map) {
         final m = Map<dynamic, dynamic>.from(photosSnap.value as Map);
+        m.forEach((key, value) {
+          if (value is Map) {
+            final species = value['species']?.toString() ?? value['detected_species']?.toString();
+            if (species != null && species.isNotEmpty) {
+              speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+              final ts = value['timestamp'];
+              int timestamp = 0;
+              if (ts is int) timestamp = ts;
+              else if (ts is double) timestamp = ts.toInt();
+              else if (ts is String) timestamp = int.tryParse(ts) ?? 0;
+              if (timestamp > (lastSeenTimestamp[species] ?? 0)) {
+                lastSeenTimestamp[species] = timestamp;
+              }
+            }
+          }
+        });
+      }
+
+      // Fetch from manual_detections (field observations)
+      final manualSnap = await db.child('manual_detections').get();
+      if (manualSnap.exists && manualSnap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(manualSnap.value as Map);
         m.forEach((key, value) {
           if (value is Map) {
             final species = value['species']?.toString();
@@ -416,6 +437,7 @@ Example response format:
               int timestamp = 0;
               if (ts is int) timestamp = ts;
               else if (ts is double) timestamp = ts.toInt();
+              else if (ts is String) timestamp = int.tryParse(ts) ?? 0;
               if (timestamp > (lastSeenTimestamp[species] ?? 0)) {
                 lastSeenTimestamp[species] = timestamp;
               }
@@ -424,14 +446,28 @@ Example response format:
         });
       }
 
-      // Also check detections summary for counts
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final summarySnap = await db.child('detections/$today/session_1/summary').get();
-      if (summarySnap.exists && summarySnap.value is Map) {
-        final m = Map<dynamic, dynamic>.from(summarySnap.value as Map);
-        m.forEach((key, value) {
-          if (key is String && value is num) {
-            speciesCounts[key] = (speciesCounts[key] ?? 0) + value.toInt();
+      // Also check detections summary for counts (from Pi sessions)
+      final detectionsSnap = await db.child('detections').get();
+      if (detectionsSnap.exists && detectionsSnap.value is Map) {
+        final dates = Map<dynamic, dynamic>.from(detectionsSnap.value as Map);
+        dates.forEach((dateKey, dateValue) {
+          if (dateValue is Map) {
+            dateValue.forEach((sessionKey, sessionValue) {
+              if (sessionValue is Map) {
+                final summary = sessionValue['summary'];
+                if (summary is Map) {
+                  final speciesData = summary['species'];
+                  if (speciesData is Map) {
+                    speciesData.forEach((sp, count) {
+                      if (sp is String && sp.isNotEmpty) {
+                        final c = count is int ? count : int.tryParse(count.toString()) ?? 0;
+                        speciesCounts[sp] = (speciesCounts[sp] ?? 0) + c;
+                      }
+                    });
+                  }
+                }
+              }
+            });
           }
         });
       }
@@ -8159,21 +8195,12 @@ class _ToolsScreenState extends State<ToolsScreen> {
   }
 
   void _showCalculatorDialog(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(children: [Icon(Icons.calculate_outlined, color: colorScheme.primary), const SizedBox(width: 12), const Text('Detection Calculator')]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Based on your detection history:', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 16),
-          _buildCalcRow(colorScheme, 'Peak hours', '7-9 AM, 5-7 PM'),
-          _buildCalcRow(colorScheme, 'Best day', 'Saturday'),
-          _buildCalcRow(colorScheme, 'Avg/day', '12 detections'),
-          _buildCalcRow(colorScheme, 'Next rare', '~3 days'),
-        ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
-      ),
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const _PredictSheet(),
     );
   }
 
@@ -9413,9 +9440,13 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
   }
 
   Future<void> _saveDetection() async {
-    if (_identifiedSpecies == null) return;
+    if (_identifiedSpecies == null) {
+      debugPrint('Save detection: No species identified');
+      return;
+    }
 
     setState(() => _isSaving = true);
+    debugPrint('Saving detection: $_identifiedSpecies');
 
     try {
       final db = primaryDatabase().ref();
@@ -9511,10 +9542,11 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         );
       }
     } catch (e) {
+      debugPrint('Save detection error: $e');
       if (mounted) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save detection'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+          SnackBar(content: Text('Failed to save: ${e.toString().length > 50 ? e.toString().substring(0, 50) : e}'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
         );
       }
     }
@@ -9843,110 +9875,408 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
   }
 }
 
-class _StatisticsSheet extends StatelessWidget {
-  final ScrollController scrollController;
-  const _StatisticsSheet({required this.scrollController});
+// ─────────────────────────────────────────────
+// Predict Sheet - Real Firebase Data Analysis
+// ─────────────────────────────────────────────
+class _PredictSheet extends StatefulWidget {
+  const _PredictSheet();
+
+  @override
+  State<_PredictSheet> createState() => _PredictSheetState();
+}
+
+class _PredictSheetState extends State<_PredictSheet> {
+  bool _isLoading = true;
+  String _peakHours = 'Analyzing...';
+  String _bestDay = 'Analyzing...';
+  String _avgPerDay = 'Analyzing...';
+  String _mostActive = 'Analyzing...';
+  int _totalDays = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _analyzeData();
+  }
+
+  Future<void> _analyzeData() async {
+    try {
+      final db = primaryDatabase().ref();
+
+      // Collect all detection timestamps
+      List<DateTime> timestamps = [];
+      Map<int, int> hourCounts = {};
+      Map<int, int> dayCounts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
+
+      // Get photo_snapshots
+      final snapshotsSnap = await db.child('photo_snapshots').get();
+      if (snapshotsSnap.exists && snapshotsSnap.value != null) {
+        final data = snapshotsSnap.value as Map<dynamic, dynamic>;
+        for (final entry in data.values) {
+          final detection = entry as Map<dynamic, dynamic>?;
+          final ts = detection?['timestamp'];
+          if (ts != null) {
+            final date = DateTime.fromMillisecondsSinceEpoch(ts is int ? ts : int.tryParse(ts.toString()) ?? 0);
+            timestamps.add(date);
+            hourCounts[date.hour] = (hourCounts[date.hour] ?? 0) + 1;
+            dayCounts[date.weekday - 1] = (dayCounts[date.weekday - 1] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Get manual_detections
+      final manualSnap = await db.child('manual_detections').get();
+      if (manualSnap.exists && manualSnap.value != null) {
+        final data = manualSnap.value as Map<dynamic, dynamic>;
+        for (final entry in data.values) {
+          final detection = entry as Map<dynamic, dynamic>?;
+          final ts = detection?['timestamp'];
+          if (ts != null) {
+            final date = DateTime.fromMillisecondsSinceEpoch(ts is int ? ts : int.tryParse(ts.toString()) ?? 0);
+            timestamps.add(date);
+            hourCounts[date.hour] = (hourCounts[date.hour] ?? 0) + 1;
+            dayCounts[date.weekday - 1] = (dayCounts[date.weekday - 1] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Analyze
+      String peakHours = 'Not enough data';
+      String bestDay = 'Not enough data';
+      String avgPerDay = '0';
+      String mostActive = 'N/A';
+
+      if (timestamps.isNotEmpty) {
+        // Find peak hours
+        final sortedHours = hourCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        if (sortedHours.isNotEmpty) {
+          final topHours = sortedHours.take(2).map((e) {
+            final h = e.key;
+            final period = h >= 12 ? 'PM' : 'AM';
+            final hour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
+            return '$hour $period';
+          }).join(', ');
+          peakHours = topHours;
+        }
+
+        // Find best day
+        final sortedDays = dayCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        final dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        if (sortedDays.isNotEmpty && sortedDays.first.value > 0) {
+          bestDay = dayNames[sortedDays.first.key];
+        }
+
+        // Calculate unique days and average
+        final uniqueDays = timestamps.map((d) => DateFormat('yyyy-MM-dd').format(d)).toSet();
+        final totalDays = uniqueDays.length;
+        final avg = totalDays > 0 ? (timestamps.length / totalDays).toStringAsFixed(1) : '0';
+        avgPerDay = '$avg/day';
+        _totalDays = totalDays;
+
+        // Most active time period
+        final morningCount = hourCounts.entries.where((e) => e.key >= 5 && e.key < 12).fold(0, (sum, e) => sum + e.value);
+        final afternoonCount = hourCounts.entries.where((e) => e.key >= 12 && e.key < 17).fold(0, (sum, e) => sum + e.value);
+        final eveningCount = hourCounts.entries.where((e) => e.key >= 17 && e.key < 21).fold(0, (sum, e) => sum + e.value);
+
+        if (morningCount >= afternoonCount && morningCount >= eveningCount) {
+          mostActive = 'Morning (5AM-12PM)';
+        } else if (afternoonCount >= eveningCount) {
+          mostActive = 'Afternoon (12-5PM)';
+        } else {
+          mostActive = 'Evening (5-9PM)';
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _peakHours = peakHours;
+          _bestDay = bestDay;
+          _avgPerDay = avgPerDay;
+          _mostActive = mostActive;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Predict analysis error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Row(children: [
+            Icon(Icons.auto_graph, color: colorScheme.primary, size: 28),
+            const SizedBox(width: 12),
+            const Text('Activity Predictions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          ]),
+          const SizedBox(height: 8),
+          Text('Based on ${_totalDays > 0 ? '$_totalDays days of' : 'your'} detection history', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 20),
+          if (_isLoading)
+            const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())
+          else ...[
+            _buildPredictRow(colorScheme, Icons.access_time, 'Peak Hours', _peakHours, Colors.orange),
+            const SizedBox(height: 12),
+            _buildPredictRow(colorScheme, Icons.calendar_today, 'Best Day', _bestDay, Colors.blue),
+            const SizedBox(height: 12),
+            _buildPredictRow(colorScheme, Icons.trending_up, 'Average', _avgPerDay, Colors.green),
+            const SizedBox(height: 12),
+            _buildPredictRow(colorScheme, Icons.wb_sunny, 'Most Active', _mostActive, Colors.purple),
+          ],
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPredictRow(ColorScheme colorScheme, IconData icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant))),
+          Text(value, style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatisticsSheet extends StatefulWidget {
+  final ScrollController scrollController;
+  const _StatisticsSheet({required this.scrollController});
+
+  @override
+  State<_StatisticsSheet> createState() => _StatisticsSheetState();
+}
+
+class _StatisticsSheetState extends State<_StatisticsSheet> {
+  bool _isLoading = true;
+  int _totalDetections = 0;
+  int _uniqueSpecies = 0;
+  int _thisWeek = 0;
+  int _today = 0;
+  Map<String, int> _speciesCounts = {};
+  Map<int, int> _weeklyActivity = {}; // 0=Mon, 6=Sun
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatistics();
+  }
+
+  Future<void> _loadStatistics() async {
+    try {
+      final db = primaryDatabase().ref();
+      final now = DateTime.now();
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final weekStart = now.subtract(Duration(days: now.weekday - 1));
+
+      // Get photo_snapshots data
+      final snapshotsSnap = await db.child('photo_snapshots').get();
+
+      // Get manual_detections data
+      final manualSnap = await db.child('manual_detections').get();
+
+      // Get detections summary data
+      final detectionsSnap = await db.child('detections').get();
+
+      Map<String, int> speciesCounts = {};
+      int total = 0;
+      int todayCount = 0;
+      int weekCount = 0;
+      Map<int, int> weeklyActivity = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
+
+      // Process photo_snapshots
+      if (snapshotsSnap.exists && snapshotsSnap.value != null) {
+        final data = snapshotsSnap.value as Map<dynamic, dynamic>;
+        for (final entry in data.entries) {
+          final detection = entry.value as Map<dynamic, dynamic>?;
+          if (detection != null) {
+            total++;
+            final species = detection['species']?.toString() ?? detection['detected_species']?.toString() ?? 'Unknown';
+            speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+
+            // Check date
+            final timestamp = detection['timestamp'];
+            if (timestamp != null) {
+              final date = DateTime.fromMillisecondsSinceEpoch(timestamp is int ? timestamp : int.tryParse(timestamp.toString()) ?? 0);
+              final dateStr = DateFormat('yyyy-MM-dd').format(date);
+              if (dateStr == todayStr) todayCount++;
+              if (date.isAfter(weekStart)) {
+                weekCount++;
+                weeklyActivity[date.weekday - 1] = (weeklyActivity[date.weekday - 1] ?? 0) + 1;
+              }
+            }
+          }
+        }
+      }
+
+      // Process manual_detections
+      if (manualSnap.exists && manualSnap.value != null) {
+        final data = manualSnap.value as Map<dynamic, dynamic>;
+        for (final entry in data.entries) {
+          final detection = entry.value as Map<dynamic, dynamic>?;
+          if (detection != null) {
+            total++;
+            final species = detection['species']?.toString() ?? 'Unknown';
+            speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+
+            final timestamp = detection['timestamp'];
+            if (timestamp != null) {
+              final date = DateTime.fromMillisecondsSinceEpoch(timestamp is int ? timestamp : int.tryParse(timestamp.toString()) ?? 0);
+              final dateStr = DateFormat('yyyy-MM-dd').format(date);
+              if (dateStr == todayStr) todayCount++;
+              if (date.isAfter(weekStart)) {
+                weekCount++;
+                weeklyActivity[date.weekday - 1] = (weeklyActivity[date.weekday - 1] ?? 0) + 1;
+              }
+            }
+          }
+        }
+      }
+
+      // Process detections summary (from Pi)
+      if (detectionsSnap.exists && detectionsSnap.value != null) {
+        final dates = detectionsSnap.value as Map<dynamic, dynamic>;
+        for (final dateEntry in dates.entries) {
+          final dateStr = dateEntry.key.toString();
+          final sessions = dateEntry.value as Map<dynamic, dynamic>?;
+          if (sessions != null) {
+            for (final session in sessions.values) {
+              final sessionData = session as Map<dynamic, dynamic>?;
+              final summary = sessionData?['summary'] as Map<dynamic, dynamic>?;
+              if (summary != null) {
+                final speciesData = summary['species'] as Map<dynamic, dynamic>?;
+                if (speciesData != null) {
+                  for (final sp in speciesData.entries) {
+                    final count = sp.value is int ? sp.value : int.tryParse(sp.value.toString()) ?? 0;
+                    total += count;
+                    speciesCounts[sp.key.toString()] = (speciesCounts[sp.key.toString()] ?? 0) + count;
+
+                    if (dateStr == todayStr) todayCount += count;
+                    try {
+                      final date = DateFormat('yyyy-MM-dd').parse(dateStr);
+                      if (date.isAfter(weekStart)) {
+                        weekCount += count;
+                        weeklyActivity[date.weekday - 1] = (weeklyActivity[date.weekday - 1] ?? 0) + count;
+                      }
+                    } catch (_) {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalDetections = total;
+          _uniqueSpecies = speciesCounts.length;
+          _thisWeek = weekCount;
+          _today = todayCount;
+          _speciesCounts = speciesCounts;
+          _weeklyActivity = weeklyActivity;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Statistics load error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  List<MapEntry<String, int>> get _topSpecies {
+    final sorted = _speciesCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(5).toList();
+  }
+
+  double _getMaxWeeklyValue() {
+    if (_weeklyActivity.isEmpty) return 1;
+    final max = _weeklyActivity.values.reduce((a, b) => a > b ? a : b);
+    return max > 0 ? max.toDouble() : 1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final colors = [Colors.red, Colors.blue, Colors.orange, Colors.pink, Colors.grey];
+    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final maxWeekly = _getMaxWeeklyValue();
+
     return ListView(
-      controller: scrollController,
+      controller: widget.scrollController,
       padding: const EdgeInsets.all(20),
       children: [
-        // Handle
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(
-              color: colorScheme.onSurfaceVariant.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-        // Title
-        Row(
-          children: [
-            Icon(Icons.analytics, color: colorScheme.primary, size: 28),
-            const SizedBox(width: 12),
-            Text(
-              'Detection Statistics',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2)))),
+        Row(children: [
+          Icon(Icons.analytics, color: colorScheme.primary, size: 28),
+          const SizedBox(width: 12),
+          Text('Detection Statistics', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+        ]),
         const SizedBox(height: 24),
-        // Stats grid
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
-          children: [
-            _buildStatCard(context, 'Total Detections', '1,247', Icons.visibility, Colors.blue),
-            _buildStatCard(context, 'Unique Species', '23', Icons.pets, Colors.green),
-            _buildStatCard(context, 'This Week', '89', Icons.calendar_today, Colors.orange),
-            _buildStatCard(context, 'Today', '12', Icons.today, Colors.purple),
-          ],
-        ),
-        const SizedBox(height: 24),
-        // Activity chart placeholder
-        Container(
-          height: 200,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceVariant.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        if (_isLoading)
+          const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+        else ...[
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.4,
             children: [
-              Text(
-                'Weekly Activity',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _buildActivityBar(context, 'Mon', 0.6),
-                    _buildActivityBar(context, 'Tue', 0.8),
-                    _buildActivityBar(context, 'Wed', 0.4),
-                    _buildActivityBar(context, 'Thu', 0.9),
-                    _buildActivityBar(context, 'Fri', 0.7),
-                    _buildActivityBar(context, 'Sat', 1.0),
-                    _buildActivityBar(context, 'Sun', 0.5),
-                  ],
-                ),
-              ),
+              _buildStatCard(context, 'Total Detections', _totalDetections.toString(), Icons.visibility, Colors.blue),
+              _buildStatCard(context, 'Unique Species', _uniqueSpecies.toString(), Icons.pets, Colors.green),
+              _buildStatCard(context, 'This Week', _thisWeek.toString(), Icons.calendar_today, Colors.orange),
+              _buildStatCard(context, 'Today', _today.toString(), Icons.today, Colors.purple),
             ],
           ),
-        ),
-        const SizedBox(height: 24),
-        // Top species
-        Text(
-          'Top Species',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+          const SizedBox(height: 24),
+          Container(
+            height: 200,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Weekly Activity', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: List.generate(7, (i) => _buildActivityBar(context, days[i], (_weeklyActivity[i] ?? 0) / maxWeekly)),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        _buildTopSpeciesRow(context, 1, 'Northern Cardinal', 234, Colors.red),
-        _buildTopSpeciesRow(context, 2, 'Blue Jay', 189, Colors.blue),
-        _buildTopSpeciesRow(context, 3, 'American Robin', 156, Colors.orange),
-        _buildTopSpeciesRow(context, 4, 'House Finch', 98, Colors.pink),
-        _buildTopSpeciesRow(context, 5, 'Black-capped Chickadee', 76, Colors.grey),
+          const SizedBox(height: 24),
+          Text('Top Species', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          if (_topSpecies.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+              child: Center(child: Text('No detections yet', style: TextStyle(color: colorScheme.onSurfaceVariant))),
+            )
+          else
+            ...List.generate(_topSpecies.length, (i) => _buildTopSpeciesRow(context, i + 1, _topSpecies[i].key, _topSpecies[i].value, colors[i % colors.length])),
+        ],
       ],
     );
   }
@@ -9955,32 +10285,15 @@ class _StatisticsSheet extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withOpacity(0.2))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Icon(icon, color: color, size: 24),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+          Text(label, style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -9994,24 +10307,11 @@ class _StatisticsSheet extends StatelessWidget {
         Expanded(
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              width: 28,
-              height: 100 * value,
-              decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.7 + value * 0.3),
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
+            child: Container(width: 28, height: math.max(4, 100 * value), decoration: BoxDecoration(color: colorScheme.primary.withOpacity(0.7 + value * 0.3), borderRadius: BorderRadius.circular(6))),
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          day,
-          style: TextStyle(
-            fontSize: 11,
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
+        Text(day, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
       ],
     );
   }
@@ -10021,43 +10321,13 @@ class _StatisticsSheet extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '$rank',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ),
-          ),
+          Container(width: 28, height: 28, decoration: BoxDecoration(color: color.withOpacity(0.2), shape: BoxShape.circle), child: Center(child: Text('$rank', style: TextStyle(fontWeight: FontWeight.bold, color: color)))),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.primary,
-            ),
-          ),
+          Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Text('$count', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.primary)),
         ],
       ),
     );
