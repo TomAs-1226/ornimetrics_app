@@ -31,27 +31,6 @@ target 'Runner' do
   # FlutterFire pulls in Swift pods. Static frameworks are generally the least painful option.
   use_frameworks! :linkage => :static
 
-  # IMPORTANT: do NOT enable `use_modular_headers!` globally.
-  # It can break header resolution in some pod targets.
-  # Only opt-in modular headers for the pods that need module maps under static linkage.
-  pod 'GoogleUtilities', :modular_headers => true
-  pod 'GoogleUtilities/Environment', :modular_headers => true
-  pod 'GoogleUtilities/UserDefaults', :modular_headers => true
-  pod 'GoogleUtilities/Network', :modular_headers => true
-  pod 'GoogleUtilities/AppDelegateSwizzler', :modular_headers => true
-  pod 'GoogleUtilities/Reachability', :modular_headers => true
-
-  # GTMSessionFetcher is required by FirebaseStorage
-  pod 'GTMSessionFetcher', :modular_headers => true
-  pod 'GTMSessionFetcher/Core', :modular_headers => true
-
-  # Firebase pods that need modular headers
-  pod 'FirebaseCore', :modular_headers => true
-  pod 'FirebaseCoreInternal', :modular_headers => true
-  pod 'FirebaseAppCheckInterop', :modular_headers => true
-  pod 'FirebaseAuthInterop', :modular_headers => true
-  pod 'FirebaseStorageInternal', :modular_headers => true
-
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
   target 'RunnerTests' do
@@ -72,6 +51,29 @@ def strip_g_flag(value)
 end
 
 post_install do |installer|
+  # Enable modular headers for pods that need them under static framework linking
+  # This is done here instead of explicit pod declarations to avoid version conflicts
+  pods_needing_modular_headers = [
+    'GoogleUtilities',
+    'GTMSessionFetcher',
+    'FirebaseCore',
+    'FirebaseCoreInternal',
+    'FirebaseAppCheckInterop',
+    'FirebaseAuthInterop',
+    'FirebaseStorageInternal',
+    'FirebaseCoreExtension',
+    'RecaptchaInterop'
+  ]
+
+  installer.pod_targets.each do |pod|
+    if pods_needing_modular_headers.any? { |name| pod.name.start_with?(name) }
+      pod.root_spec.attributes_hash['pod_target_xcconfig'] ||= {}
+      pod.build_settings.each do |config_name, config|
+        config.define_module = true
+      end
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
