@@ -299,13 +299,7 @@ struct OrnimetricsWidgetEntryView: View {
     }
 }
 
-// MARK: - Widget Bundle
-@main
-struct OrnimetricsWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        OrnimetricsWidget()
-    }
-}
+// Note: WidgetBundle is defined in OrnimetricsWidgetBundle.swift
 
 // MARK: - Preview
 #Preview(as: .systemSmall) {
