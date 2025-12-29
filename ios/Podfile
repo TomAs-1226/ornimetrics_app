@@ -41,13 +41,13 @@ target 'Runner' do
   end
 end
 
-# Helper method to strip -G flag from any string or array
+# Helper method to strip -GCC_WARN_INHIBIT_ALL_WARNINGS flag from any string or array
 def strip_g_flag(value)
   return nil if value.nil?
   if value.is_a?(String)
-    value.gsub(/-G\b/, '').gsub(/\s+/, ' ').strip
+    value.gsub('-GCC_WARN_INHIBIT_ALL_WARNINGS', '').gsub(/\s+/, ' ').strip
   elsif value.is_a?(Array)
-    value.map { |v| strip_g_flag(v) }.compact.reject(&:empty?)
+    value.reject { |v| v == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }.map { |v| strip_g_flag(v) }.compact.reject(&:empty?)
   else
     value
   end
@@ -146,22 +146,22 @@ post_install do |installer|
       end
     end
 
-    # Also patch build phases that might contain -G flag
+    # Also patch build phases that might contain -GCC_WARN_INHIBIT_ALL_WARNINGS flag
     target.build_phases.each do |phase|
       if phase.respond_to?(:shell_script) && phase.shell_script
-        if phase.shell_script.include?('-G')
-          phase.shell_script = phase.shell_script.gsub(/-G\b/, '')
+        if phase.shell_script.include?('-GCC_WARN_INHIBIT_ALL_WARNINGS')
+          phase.shell_script = phase.shell_script.gsub('-GCC_WARN_INHIBIT_ALL_WARNINGS', '')
         end
       end
 
-      # Strip -G from individual source file compiler flags (BoringSSL assembly files)
+      # Strip -GCC_WARN_INHIBIT_ALL_WARNINGS from individual source file compiler flags (BoringSSL)
+      # Xcode 16+ clang misinterprets this as -G flag which is unsupported on simulators
       if phase.respond_to?(:files)
         phase.files.each do |file|
           if file.settings && file.settings['COMPILER_FLAGS']
-            flags = file.settings['COMPILER_FLAGS']
-            if flags.include?('-G')
-              file.settings['COMPILER_FLAGS'] = flags.gsub(/-G\b/, '').gsub(/\s+/, ' ').strip
-            end
+            flags = file.settings['COMPILER_FLAGS'].split
+            flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
+            file.settings['COMPILER_FLAGS'] = flags.join(' ')
           end
         end
       end
@@ -176,21 +176,21 @@ post_install do |installer|
     end
   end
 
-  # Remove -G from ALL generated xcconfig files
+  # Remove -GCC_WARN_INHIBIT_ALL_WARNINGS from ALL generated xcconfig files
   pods_root = installer.sandbox.root.to_s
   Dir.glob("#{pods_root}/**/*.xcconfig").each do |xcconfig|
     content = File.read(xcconfig)
-    if content.include?('-G')
-      new_content = content.gsub(/-G\b/, '').gsub(/\s+/, ' ')
+    if content.include?('-GCC_WARN_INHIBIT_ALL_WARNINGS')
+      new_content = content.gsub('-GCC_WARN_INHIBIT_ALL_WARNINGS', '')
       File.write(xcconfig, new_content)
     end
   end
 
-  # Patch any shell scripts in the Pods directory that might pass -G
+  # Patch any shell scripts in the Pods directory that might pass -GCC_WARN_INHIBIT_ALL_WARNINGS
   Dir.glob("#{pods_root}/**/*.sh").each do |script|
     content = File.read(script)
-    if content.include?('-G')
-      new_content = content.gsub(/-G\b/, '')
+    if content.include?('-GCC_WARN_INHIBIT_ALL_WARNINGS')
+      new_content = content.gsub('-GCC_WARN_INHIBIT_ALL_WARNINGS', '')
       File.write(script, new_content)
     end
   end
