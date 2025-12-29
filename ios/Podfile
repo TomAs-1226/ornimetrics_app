@@ -39,6 +39,19 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  # Fix gRPC-Core C++ template issue for Xcode 16.3+
+  grpc_file_path = "#{installer.sandbox.root}/gRPC-Core/src/core/lib/promise/detail/basic_seq.h"
+  if File.exist?(grpc_file_path)
+    file_content = File.read(grpc_file_path)
+    problematic_line = 'return Traits::template CallSeqFactory(f_, *cur_, std::move(arg));'
+    correct_line = 'return Traits::template CallSeqFactory<>(f_, *cur_, std::move(arg));'
+    if file_content.include?(problematic_line)
+      puts "Patching gRPC-Core basic_seq.h for Xcode 16.3+ compatibility..."
+      file_content.gsub!(problematic_line, correct_line)
+      File.open(grpc_file_path, "w") { |file| file.puts file_content }
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
