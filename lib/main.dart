@@ -28,6 +28,7 @@ import 'services/ai_provider.dart';
 import 'services/location_service.dart';
 import 'services/widget_service.dart';
 import 'services/community_storage_service.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/community_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
@@ -302,8 +303,31 @@ void main() async {
   runApp(const WildlifeApp());
 }
 
-class WildlifeApp extends StatelessWidget {
+class WildlifeApp extends StatefulWidget {
   const WildlifeApp({super.key});
+
+  @override
+  State<WildlifeApp> createState() => _WildlifeAppState();
+}
+
+class _WildlifeAppState extends State<WildlifeApp> {
+  bool? _showOnboarding;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final completed = prefs.getBool('onboarding_complete') ?? false;
+    setState(() => _showOnboarding = !completed);
+  }
+
+  void _onOnboardingComplete() {
+    setState(() => _showOnboarding = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,12 +360,15 @@ class WildlifeApp extends StatelessWidget {
                 scaffoldBackgroundColor: const Color(0xFF121212),
                 cardTheme: const CardThemeData(
                   elevation: 1,
-                  // Border radius looks good in dark as well
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                 ),
                 appBarTheme: const AppBarTheme(),
               ),
-              home: const WildlifeTrackerScreen(),
+              home: _showOnboarding == null
+                  ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+                  : _showOnboarding!
+                      ? OnboardingScreen(onComplete: _onOnboardingComplete)
+                      : const WildlifeTrackerScreen(),
             );
           },
         );
@@ -1571,31 +1598,43 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'Ornimetrics Tracker',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: _navigateToSettings,
-            ),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            labelPadding: EdgeInsets.symmetric(horizontal: 16),
-            tabs: [
-              Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
-              Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
-              Tab(icon: Icon(Icons.cloud_outlined), text: 'Environment'),
-              Tab(icon: Icon(Icons.groups_2_outlined), text: 'Community'),
-            ],
-          ),
-        ),
-        body: TabBarView(
+      child: Builder(
+        builder: (context) {
+          // Dismiss keyboard when switching tabs
+          final tabController = DefaultTabController.of(context);
+          tabController.addListener(() {
+            if (!tabController.indexIsChanging) {
+              FocusScope.of(context).unfocus();
+            }
+          });
+          return GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Scaffold(
+              appBar: AppBar(
+                title: const Text(
+                  'Ornimetrics Tracker',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                centerTitle: true,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    onPressed: _navigateToSettings,
+                  ),
+                ],
+                bottom: TabBar(
+                  isScrollable: true,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  onTap: (_) => FocusScope.of(context).unfocus(),
+                  tabs: const [
+                    Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
+                    Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
+                    Tab(icon: Icon(Icons.cloud_outlined), text: 'Environment'),
+                    Tab(icon: Icon(Icons.groups_2_outlined), text: 'Community'),
+                  ],
+                ),
+              ),
+              body: TabBarView(
           children: [
             _buildDashboardTab(),
             _buildRecentDetectionsTab(),
@@ -1622,7 +1661,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           child: const Icon(Icons.arrow_upward),
         )
             : null,
-      ),
+              ),
+            );
+          },
+        ),
     );
   }
 
@@ -2350,7 +2392,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       barrierLabel: 'Activity Details',
       barrierColor: Colors.black.withOpacity(0.45),
       transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, __, ___) {
+      pageBuilder: (dialogContext, __, ___) {
         return SafeArea(
           child: Stack(
             alignment: Alignment.center,
@@ -2381,10 +2423,51 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-                        child: _buildActivityDetailContent(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Header with back button
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () {
+                                    safeLightHaptic();
+                                    Navigator.of(dialogContext).pop();
+                                  },
+                                  icon: const Icon(Icons.arrow_back_rounded),
+                                  tooltip: 'Close',
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Activity by Hour',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  onPressed: () {
+                                    safeLightHaptic();
+                                    Navigator.of(dialogContext).pop();
+                                  },
+                                  icon: const Icon(Icons.close_rounded),
+                                  tooltip: 'Close',
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(),
+                          // Content
+                          Flexible(
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                              child: _buildActivityDetailContent(),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
