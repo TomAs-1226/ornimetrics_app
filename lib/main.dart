@@ -4,8 +4,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:image/image.dart' as img;
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -10161,7 +10159,7 @@ class _StatisticsSheetState extends State<_StatisticsSheet> {
                 final speciesData = summary['species'] as Map<dynamic, dynamic>?;
                 if (speciesData != null) {
                   for (final sp in speciesData.entries) {
-                    final count = sp.value is int ? sp.value : int.tryParse(sp.value.toString()) ?? 0;
+                    final int count = sp.value is int ? (sp.value as int) : int.tryParse(sp.value.toString()) ?? 0;
                     total += count;
                     speciesCounts[sp.key.toString()] = (speciesCounts[sp.key.toString()] ?? 0) + count;
 
