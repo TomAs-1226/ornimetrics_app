@@ -1722,19 +1722,20 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Text(
-                          'Total Detections',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        Flexible(
+                          child: Text(
+                            'Total Detections',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Spacer(),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: Icon(
-                            Icons.track_changes,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.track_changes,
+                          color: Theme.of(context).colorScheme.primary,
+                          size: 20,
                         ),
                       ],
                     ),
@@ -1967,12 +1968,13 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           children: [
             Row(
               children: [
-                const Text('Species Diversity Metrics',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                const Spacer(),
-                Icon(Icons.open_in_full, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text('Hold to Copy', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Flexible(
+                  child: Text('Species Diversity Metrics',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.open_in_full, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ],
             ),
             const SizedBox(height: 12),
