@@ -5992,14 +5992,14 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   String get _versionSubtitle {
-    if (_easterEggUnlocked) return '1.2.0 ✨ Developer Mode';
+    if (_easterEggUnlocked) return '2.1.0 ✨ Developer Mode';
     // Show tap progress only during rapid tapping
     if (_versionTapCount >= 3 && _versionTapCount < 7 &&
         _lastTapTime != null &&
         DateTime.now().difference(_lastTapTime!) < const Duration(milliseconds: 1500)) {
-      return '1.3.0 • ${7 - _versionTapCount} more...';
+      return '2.1.0 • ${7 - _versionTapCount} more...';
     }
-    return '1.3.0';
+    return '2.1.0';
   }
 
   void _showAboutDialog() {
@@ -6261,10 +6261,18 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 'We are not liable for any indirect, incidental, special, or consequential damages arising from App use, including but not limited to: data loss, incorrect species identification, or service interruptions. Our total liability is limited to the amount you paid for the App.'),
               _buildTosSection('14. Changes to Terms',
                 'We may update these terms periodically. Version 2.1 is effective December 2025. Significant changes will be communicated through in-app notifications. Continued use after changes constitutes acceptance of the new terms.'),
-              _buildTosSection('15. Governing Law',
-                'These terms are governed by applicable laws. Any disputes shall be resolved through good-faith negotiation or binding arbitration.'),
-              _buildTosSection('16. Contact Us',
-                'For questions, concerns, or data requests, contact us at support@ornimetrics.app. We aim to respond within 48 hours.'),
+              _buildTosSection('15. Updates & Maintenance',
+                'We may release updates to improve functionality, fix bugs, or add features. Some updates may be required for continued use. We may perform scheduled maintenance that temporarily limits service availability. Critical updates affecting data or privacy will be communicated in advance.'),
+              _buildTosSection('16. User Feedback',
+                'We welcome feedback, suggestions, and bug reports. By submitting feedback, you grant us the right to use your suggestions without compensation. Feedback does not create any confidential relationship or intellectual property rights.'),
+              _buildTosSection('17. Age Requirements',
+                'The App is intended for users aged 13 and older. Users under 18 should have parental consent before creating an account or participating in the Model Improvement Program. We do not knowingly collect data from children under 13.'),
+              _buildTosSection('18. Offline Functionality',
+                'Some features require an internet connection. Offline mode provides limited functionality. Data created offline will sync when connection is restored. We are not responsible for data loss due to sync failures.'),
+              _buildTosSection('19. Governing Law',
+                'These terms are governed by applicable laws. Any disputes shall be resolved through good-faith negotiation or binding arbitration. Class action waivers may apply where permitted by law.'),
+              _buildTosSection('20. Contact Us',
+                'For questions, concerns, data requests, or to report issues, contact us at support@ornimetrics.app. We aim to respond within 48 hours. For urgent security issues, mark your email as "URGENT: Security".'),
             ],
           ),
         ),
@@ -6561,7 +6569,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final data = {
       'export_info': {
         'app': 'Ornimetrics',
-        'version': '1.3.0',
+        'version': '2.1.0',
         'generated': DateTime.now().toIso8601String(),
       },
       'summary': {
@@ -7879,48 +7887,74 @@ class _ToolsScreenState extends State<ToolsScreen> {
                     Icon(Icons.auto_awesome, size: 48, color: Colors.purple),
                     const SizedBox(height: 12),
                     Text(
-                      'Help improve bird identification for everyone! Your field detection images help train our AI to recognize more species with higher accuracy.',
+                      'Join our community of bird enthusiasts helping to build the most accurate species identifier!',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: colorScheme.onSurface, height: 1.4),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: colorScheme.onSurface, height: 1.4),
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.lightbulb_outline, size: 18, color: Colors.purple),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Every image helps the AI learn new species, lighting conditions, and angles.',
-                              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-                            ),
-                          ),
-                        ],
-                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your verified field observations help train our AI to recognize more species, in different lighting conditions, angles, and environments.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant, height: 1.4),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
+              // How it works section
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text('How It Works', style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _buildHowItWorksStep(colorScheme, '1', 'You identify a bird using the AI Species Identifier'),
+                    _buildHowItWorksStep(colorScheme, '2', 'After saving, your image is anonymized (no location/personal data)'),
+                    _buildHowItWorksStep(colorScheme, '3', 'Images are reviewed and added to our training dataset'),
+                    _buildHowItWorksStep(colorScheme, '4', 'AI models are periodically retrained with new data'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Privacy & Benefits
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
+                        Icon(Icons.shield_outlined, size: 18, color: Colors.green),
+                        const SizedBox(width: 8),
+                        const Text('Privacy & Benefits', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     _buildBenefitRow(colorScheme, Icons.psychology, 'Improve species recognition accuracy'),
                     const SizedBox(height: 10),
                     _buildBenefitRow(colorScheme, Icons.security, 'Images stored securely & anonymized'),
                     const SizedBox(height: 10),
+                    _buildBenefitRow(colorScheme, Icons.location_off, 'Location data stripped from images'),
+                    const SizedBox(height: 10),
                     _buildBenefitRow(colorScheme, Icons.visibility_off, 'No personal data collected'),
                     const SizedBox(height: 10),
-                    _buildBenefitRow(colorScheme, Icons.volunteer_activism, 'Support bird research'),
+                    _buildBenefitRow(colorScheme, Icons.science, 'Support ornithology research'),
                     const SizedBox(height: 10),
-                    _buildBenefitRow(colorScheme, Icons.cancel_outlined, 'Cancel anytime in Settings'),
+                    _buildBenefitRow(colorScheme, Icons.group, 'Help fellow bird watchers'),
+                    const SizedBox(height: 10),
+                    _buildBenefitRow(colorScheme, Icons.cancel_outlined, 'Opt out anytime in Settings'),
                   ],
                 ),
               ),
@@ -7999,6 +8033,30 @@ class _ToolsScreenState extends State<ToolsScreen> {
         const SizedBox(width: 12),
         Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: colorScheme.onSurface))),
       ],
+    );
+  }
+
+  Widget _buildHowItWorksStep(ColorScheme colorScheme, String step, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(step, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorScheme.primary)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant))),
+        ],
+      ),
     );
   }
 
@@ -9602,8 +9660,11 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         }
       }
 
-      // Save to user-specific path
-      await db.child('users/${user.uid}/field_detections').push().set(detectionData);
+      // Save to user-specific path in Firebase
+      debugPrint('Saving to path: users/${user.uid}/field_detections');
+      final newRef = db.child('users/${user.uid}/field_detections').push();
+      await newRef.set(detectionData);
+      debugPrint('Successfully saved detection with key: ${newRef.key}');
 
       // Upload to training pool if user opted in to Model Improvement Program
       bool contributedToTraining = false;
@@ -9616,6 +9677,7 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
             'confidence': _confidence,
             'timestamp': now.millisecondsSinceEpoch,
             'user_verified': true,
+            'contributor_id': user.uid,
           };
           await db.child('training_pool').push().set(trainingData);
           imagesContributedNotifier.value++;
@@ -9623,12 +9685,15 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('images_contributed', imagesContributedNotifier.value);
           contributedToTraining = true;
-        } catch (_) {
+          debugPrint('Contributed image to training pool');
+        } catch (e) {
+          debugPrint('Training pool upload failed: $e');
           // Continue even if training upload fails
         }
       }
 
       if (mounted) {
+        setState(() => _isSaving = false);
         Navigator.pop(context);
         widget.onDetectionSaved();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9637,20 +9702,33 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
-                Expanded(child: Text('$_identifiedSpecies saved${contributedToTraining ? ' & contributed to AI training' : ''}')),
+                Expanded(child: Text('$_identifiedSpecies saved to My Field Detections${contributedToTraining ? ' & contributed to AI' : ''}')),
               ],
             ),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
       debugPrint('Save detection error: $e');
+      debugPrint('Error type: ${e.runtimeType}');
       if (mounted) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: ${e.toString().length > 50 ? e.toString().substring(0, 50) : e}'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Failed to save: ${e.toString().replaceAll('Exception: ', '')}')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -9919,6 +9997,57 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
           ),
           const SizedBox(height: 16),
 
+          // User login status
+          Builder(
+            builder: (context) {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user == null) {
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Sign in to save field observations to your account',
+                          style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Signed in as ${user.email ?? 'User'}',
+                        style: TextStyle(fontSize: 11, color: Colors.green[700]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
           // Save Options
           Container(
             padding: const EdgeInsets.all(16),
@@ -9929,7 +10058,13 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Save Options', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+                Row(
+                  children: [
+                    Icon(Icons.tune, size: 18, color: colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text('Save Options', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 _buildSaveOption(colorScheme, Icons.location_on, 'Include Location', 'Add GPS coordinates', _includeLocation, (v) => setState(() => _includeLocation = v)),
                 _buildSaveOption(colorScheme, Icons.cloud, 'Include Weather', 'Add current conditions', _includeWeather, (v) => setState(() => _includeWeather = v)),
