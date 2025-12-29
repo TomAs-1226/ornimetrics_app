@@ -7,14 +7,20 @@ struct BirdDetectionData: Codable {
     let uniqueSpecies: Int
     let lastDetection: String
     let topSpecies: String
-    let lastUpdated: Date
+    let lastUpdated: String  // ISO8601 string from Flutter
+
+    var lastUpdatedDate: Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: lastUpdated) ?? Date()
+    }
 
     static let placeholder = BirdDetectionData(
         totalDetections: 0,
         uniqueSpecies: 0,
         lastDetection: "No detections yet",
         topSpecies: "—",
-        lastUpdated: Date()
+        lastUpdated: ISO8601DateFormatter().string(from: Date())
     )
 }
 
@@ -41,14 +47,36 @@ struct Provider: TimelineProvider {
     }
 
     private func loadData() -> BirdDetectionData {
-        let sharedDefaults = UserDefaults(suiteName: "group.com.ornimetrics.app")
-
-        guard let data = sharedDefaults?.data(forKey: "widgetData"),
-              let decoded = try? JSONDecoder().decode(BirdDetectionData.self, from: data) else {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.ornimetrics.app") else {
+            print("Widget: Could not access app group")
             return .placeholder
         }
 
-        return decoded
+        // Try reading as Data first (from Flutter method channel)
+        if let data = sharedDefaults.data(forKey: "widgetData") {
+            do {
+                let decoded = try JSONDecoder().decode(BirdDetectionData.self, from: data)
+                print("Widget: Loaded data - \(decoded.totalDetections) detections")
+                return decoded
+            } catch {
+                print("Widget: Failed to decode data - \(error)")
+            }
+        }
+
+        // Try reading as String (alternative format)
+        if let jsonString = sharedDefaults.string(forKey: "widgetData"),
+           let data = jsonString.data(using: .utf8) {
+            do {
+                let decoded = try JSONDecoder().decode(BirdDetectionData.self, from: data)
+                print("Widget: Loaded from string - \(decoded.totalDetections) detections")
+                return decoded
+            } catch {
+                print("Widget: Failed to decode string - \(error)")
+            }
+        }
+
+        print("Widget: No data found, using placeholder")
+        return .placeholder
     }
 }
 
@@ -231,7 +259,7 @@ struct LargeWidgetView: View {
             HStack {
                 Image(systemName: "clock")
                     .font(.caption2)
-                Text("Updated \(entry.data.lastUpdated, style: .relative) ago")
+                Text("Updated \(entry.data.lastUpdatedDate, style: .relative) ago")
                     .font(.caption2)
             }
             .foregroundColor(.secondary)

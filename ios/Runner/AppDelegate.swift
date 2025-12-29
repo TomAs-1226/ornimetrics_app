@@ -37,23 +37,36 @@ import WidgetKit
         guard let args = call.arguments as? [String: Any],
               let appGroupId = args["appGroupId"] as? String,
               let key = args["key"] as? String,
-              let data = args["data"] as? String else {
+              let jsonString = args["data"] as? String else {
+            print("Widget Update: Invalid arguments")
             result(FlutterError(code: "INVALID_ARGS", message: "Invalid arguments", details: nil))
             return
         }
 
+        print("Widget Update: Saving to \(appGroupId) with key \(key)")
+        print("Widget Update: Data = \(jsonString.prefix(100))...")
+
         // Save to shared UserDefaults
         if let sharedDefaults = UserDefaults(suiteName: appGroupId) {
-            sharedDefaults.set(data.data(using: .utf8), forKey: key)
-            sharedDefaults.synchronize()
+            // Save as Data for the widget to read
+            if let jsonData = jsonString.data(using: .utf8) {
+                sharedDefaults.set(jsonData, forKey: key)
+                sharedDefaults.synchronize()
+                print("Widget Update: Saved successfully")
 
-            // Refresh widgets
-            if #available(iOS 14.0, *) {
-                WidgetCenter.shared.reloadAllTimelines()
+                // Refresh widgets
+                if #available(iOS 14.0, *) {
+                    WidgetCenter.shared.reloadAllTimelines()
+                    print("Widget Update: Triggered widget reload")
+                }
+
+                result(true)
+            } else {
+                print("Widget Update: Failed to convert string to data")
+                result(FlutterError(code: "FAILED", message: "Could not convert data", details: nil))
             }
-
-            result(true)
         } else {
+            print("Widget Update: Could not access app group \(appGroupId)")
             result(FlutterError(code: "FAILED", message: "Could not access app group", details: nil))
         }
     }
