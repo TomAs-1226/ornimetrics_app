@@ -52,23 +52,25 @@ end
 
 post_install do |installer|
   # Pods that need modular headers for static framework linking
+  # Use include? for flexible matching since CocoaPods target names may vary
   pods_needing_modular_headers = [
     'GoogleUtilities',
     'GTMSessionFetcher',
-    'FirebaseCore',
-    'FirebaseCoreInternal',
-    'FirebaseAppCheckInterop',
-    'FirebaseAuthInterop',
-    'FirebaseStorageInternal',
-    'FirebaseCoreExtension',
-    'RecaptchaInterop'
+    'Firebase',
+    'Google',
+    'Recaptcha',
+    'grpc',
+    'abseil',
+    'PromisesObjC',
+    'nanopb'
   ]
 
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
     # Enable modular headers for specific pods by setting DEFINES_MODULE
-    needs_modular = pods_needing_modular_headers.any? { |name| target.name.start_with?(name) }
+    # Use include? for flexible matching
+    needs_modular = pods_needing_modular_headers.any? { |name| target.name.include?(name) }
 
     # Special handling for BoringSSL-GRPC which uses -G flag in assembly
     is_boringssl = target.name.include?('BoringSSL') || target.name.include?('grpc')
