@@ -8601,7 +8601,10 @@ If no bird is visible, return {"species": "Unknown", "scientific_name": "", "con
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Service unavailable');
+      debugPrint('OpenAI API Error: ${response.statusCode} - ${response.body}');
+      final errorBody = jsonDecode(response.body);
+      final errorMsg = errorBody['error']?['message'] ?? 'Service unavailable';
+      throw Exception(errorMsg);
     }
 
     final data = jsonDecode(response.body);
