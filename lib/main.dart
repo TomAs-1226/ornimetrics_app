@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:image/image.dart' as img;
-import 'package:onnxruntime/onnxruntime.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8531,210 +8529,53 @@ class _ToolsScreenState extends State<ToolsScreen> {
 // ─────────────────────────────────────────────
 
 /// Service for AI-powered bird species detection.
-///
-/// MODEL PLACEMENT INSTRUCTIONS:
-/// ─────────────────────────────────────────────
-/// 1. Create the directory: assets/models/
-/// 2. Export your YOLO model to ONNX format:
-///    yolo export model=best.pt format=onnx
-/// 3. Place the model at: assets/models/bird_classifier.onnx
-///
-/// ONNX models contain embedded label metadata, so no separate labels file is needed.
-/// Expected model input: 640x640 or 224x224 RGB image tensor (normalized 0-1)
-/// Expected model output: Class probabilities with embedded label names
-/// ─────────────────────────────────────────────
+/// Uses cloud AI for identification. Requires internet connection.
 class BirdDetectionService {
   static final BirdDetectionService instance = BirdDetectionService._();
   BirdDetectionService._();
 
-  static const String modelPath = 'assets/models/bird_classifier.onnx';
-
-  OrtSession? _session;
-  List<String> _labels = [];
   bool _isInitialized = false;
-  String? _initError;
 
-  // Model input dimensions (YOLO default is 640, classification is 224)
-  static const int inputSize = 640;
-
-  /// Initialize the ONNX model - call this before first detection
+  /// Initialize the service
   Future<void> initialize() async {
-    if (_isInitialized) return;
-
-    try {
-      // Initialize ONNX Runtime
-      OrtEnv.instance.init();
-
-      // Load the ONNX model from assets
-      final modelData = await rootBundle.load(modelPath);
-      final bytes = modelData.buffer.asUint8List();
-
-      final sessionOptions = OrtSessionOptions();
-      _session = OrtSession.fromBuffer(bytes, sessionOptions);
-
-      // Extract labels from model metadata if available
-      // YOLO models store class names in metadata
-      _labels = _extractLabelsFromModel();
-
-      _isInitialized = true;
-      _initError = null;
-      debugPrint('BirdDetectionService: ONNX model loaded with ${_labels.length} classes');
-    } catch (e) {
-      _initError = e.toString();
-      debugPrint('BirdDetectionService: Model load failed: $e');
-      // Model not available - will use cloud AI when online
-    }
+    _isInitialized = true;
+    debugPrint('BirdDetectionService: Initialized');
   }
 
-  /// Extract labels embedded in ONNX model metadata
-  List<String> _extractLabelsFromModel() {
-    // YOLO exports include 'names' in metadata
-    // Default bird species labels if metadata not available
-    return [
-      'Northern Cardinal', 'Blue Jay', 'American Robin', 'House Finch',
-      'Black-capped Chickadee', 'American Goldfinch', 'Downy Woodpecker',
-      'White-breasted Nuthatch', 'House Sparrow', 'European Starling',
-      'Mourning Dove', 'Red-winged Blackbird', 'Common Grackle',
-      'Dark-eyed Junco', 'Tufted Titmouse', 'Carolina Wren',
-      'Song Sparrow', 'American Crow', 'Red-bellied Woodpecker',
-      'Hairy Woodpecker', 'Purple Finch', 'Pine Siskin',
-      'White-throated Sparrow', 'Northern Flicker', 'Eastern Bluebird',
-    ];
-  }
-
-  /// Check if the local model is available
-  bool get isModelAvailable => _isInitialized && _session != null;
-
-  /// Get initialization error if any
-  String? get initializationError => _initError;
+  /// Check if service is ready
+  bool get isModelAvailable => _isInitialized;
 
   /// Check network connectivity
   Future<bool> _isOnline() async {
     try {
       final result = await Connectivity().checkConnectivity();
-      return result != ConnectivityResult.none;
+      return !result.contains(ConnectivityResult.none);
     } catch (_) {
       return false;
     }
   }
 
-  /// Run inference on an image - uses cloud AI when online, local ONNX when offline
+  /// Run species identification on an image
   Future<Map<String, dynamic>> detectSpecies(Uint8List imageBytes) async {
     final online = await _isOnline();
 
-    // Strategy: Use cloud AI when online for best accuracy, local when offline
-    if (online) {
-      try {
-        return await _identifyWithCloudAI(imageBytes);
-      } catch (e) {
-        debugPrint('BirdDetectionService: Cloud AI failed, trying local: $e');
-        // Fall through to local model
-      }
+    if (!online) {
+      throw Exception('No internet connection. Please connect to identify species.');
     }
 
-    // Use local ONNX model (offline or cloud failed)
-    if (_isInitialized && _session != null) {
-      try {
-        return await _runLocalInference(imageBytes);
-      } catch (e) {
-        debugPrint('BirdDetectionService: Local inference failed: $e');
-      }
-    }
-
-    // Both methods failed
-    throw Exception('Unable to identify species. Please check your connection and try again.');
-  }
-
-  /// Run local ONNX model inference
-  Future<Map<String, dynamic>> _runLocalInference(Uint8List imageBytes) async {
-    // Decode and preprocess image
-    final image = img.decodeImage(imageBytes);
-    if (image == null) throw Exception('Failed to decode image');
-
-    // Resize to model input size
-    final resized = img.copyResize(image, width: inputSize, height: inputSize);
-
-    // Convert to normalized float array [0, 1] in NCHW format for ONNX
-    final input = Float32List(1 * 3 * inputSize * inputSize);
-    for (int c = 0; c < 3; c++) {
-      for (int y = 0; y < inputSize; y++) {
-        for (int x = 0; x < inputSize; x++) {
-          final pixel = resized.getPixel(x, y);
-          final value = c == 0 ? pixel.r : (c == 1 ? pixel.g : pixel.b);
-          input[c * inputSize * inputSize + y * inputSize + x] = value / 255.0;
-        }
-      }
-    }
-
-    // Create input tensor
-    final inputOrt = OrtValueTensor.createTensorWithDataList(
-      input,
-      [1, 3, inputSize, inputSize],
-    );
-
-    // Run inference
-    final inputs = {'images': inputOrt};
-    final outputs = await _session!.runAsync(OrtRunOptions(), inputs);
-    inputOrt.release();
-
-    // Parse YOLO output (typically [1, num_detections, 85] for YOLO)
-    final outputData = outputs?.first?.value as List<dynamic>?;
-
-    if (outputData == null || outputData.isEmpty) {
-      throw Exception('No detections');
-    }
-
-    // For classification models, get top prediction
-    List<Map<String, dynamic>> topPredictions = [];
-    String topSpecies = 'Unknown';
-    double topConfidence = 0.0;
-
-    // Handle output based on model type
-    if (outputData is List<List<double>>) {
-      // Classification output [1, num_classes]
-      final probs = outputData[0];
-      final indexed = probs.asMap().entries.toList();
-      indexed.sort((a, b) => b.value.compareTo(a.value));
-
-      topPredictions = indexed.take(5).map((e) => {
-        'species': e.key < _labels.length ? _labels[e.key] : 'Class ${e.key}',
-        'confidence': e.value,
-      }).toList();
-
-      if (topPredictions.isNotEmpty) {
-        topSpecies = topPredictions[0]['species'] as String;
-        topConfidence = topPredictions[0]['confidence'] as double;
-      }
-    } else {
-      // YOLO detection output - find highest confidence bird detection
-      topSpecies = _labels.isNotEmpty ? _labels[0] : 'Bird';
-      topConfidence = 0.85;
-      topPredictions = [{'species': topSpecies, 'confidence': topConfidence}];
-    }
-
-    // Clean up
-    outputs?.forEach((e) => e?.release());
-
-    // Get scientific name from cache
-    String scientificName = '';
     try {
-      final info = await SpeciesInfoService.instance.getSpeciesInfo(topSpecies);
-      scientificName = info['scientific_name'] ?? '';
-    } catch (_) {}
-
-    return {
-      'species': topSpecies,
-      'scientific_name': scientificName,
-      'confidence': topConfidence,
-      'top_predictions': topPredictions,
-    };
+      return await _identifyWithCloudAI(imageBytes);
+    } catch (e) {
+      debugPrint('BirdDetectionService: Detection failed: $e');
+      throw Exception('Unable to identify species. Please try again.');
+    }
   }
 
-  /// Cloud AI identification (internal - not disclosed to users)
+  /// Cloud AI identification (internal)
   Future<Map<String, dynamic>> _identifyWithCloudAI(Uint8List imageBytes) async {
     final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
-      throw Exception('Cloud AI not configured');
+      throw Exception('Service not configured');
     }
 
     final base64Image = base64Encode(imageBytes);
@@ -8772,7 +8613,7 @@ If no bird is visible, return {"species": "Unknown", "scientific_name": "", "con
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Cloud AI unavailable');
+      throw Exception('Service unavailable');
     }
 
     final data = jsonDecode(response.body);
@@ -8795,8 +8636,6 @@ If no bird is visible, return {"species": "Unknown", "scientific_name": "", "con
 
   /// Dispose of resources
   void dispose() {
-    _session?.release();
-    _session = null;
     _isInitialized = false;
   }
 }

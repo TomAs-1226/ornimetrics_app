@@ -1,60 +1,37 @@
 # Bird Detection Model
 
-## Setup Instructions
+## Current Implementation
 
-### 1. Export your YOLO model to ONNX format
+The Ornimetrics app uses cloud-based AI for bird species identification.
 
-If you're using the same YOLO model as the Raspberry Pi:
+### Requirements
+- Active internet connection
+- Valid API key in `.env` file
 
-```bash
-# Install ultralytics if needed
-pip install ultralytics
+### How It Works
 
-# Export to ONNX
-yolo export model=best.pt format=onnx
-```
+1. User takes or selects a photo
+2. Image is sent to cloud AI for analysis
+3. Species name, scientific name, and confidence are returned
+4. Results can be saved to your field detections
 
-This creates `best.onnx` with embedded class labels.
+### Offline Mode
 
-### 2. Place the model file
+When offline, the app will display a message asking the user to connect to the internet for species identification. The feeder monitoring and other features continue to work offline with cached data.
 
-Copy the `.onnx` file to this directory and rename it:
-```
-assets/models/bird_classifier.onnx
-```
+### Future Local Model Support
 
-### 3. Rebuild the app
+To add offline detection capability in the future:
 
-```bash
-flutter clean
-flutter pub get
-flutter build ios  # or android
-```
+1. Convert your YOLO model to TensorFlow Lite:
+   ```bash
+   yolo export model=best.pt format=tflite
+   ```
 
-## Detection Behavior
+2. Add `tflite_flutter` package to pubspec.yaml
 
-The app automatically chooses the best detection method:
+3. Implement TFLite inference in `BirdDetectionService`
 
-**Online Mode:**
-- Uses cloud-based AI for highest accuracy
-- Requires internet connection
-- Best for detailed species identification
+4. Place the model at: `assets/models/bird_classifier.tflite`
 
-**Offline Mode:**
-- Uses local ONNX model on device
-- No internet required
-- Fast, private identification
-- Works with embedded class labels in model
-
-## Model Requirements
-
-- Format: ONNX (.onnx)
-- Input size: 640x640 RGB (YOLO default) or 224x224 (classification)
-- Normalized: 0-1 range
-- Labels: Embedded in ONNX metadata (no separate labels.txt needed)
-
-## Supported Models
-
-- YOLOv8 classification/detection models
-- Custom bird classification models
-- Any ONNX-compatible model with proper input/output specs
+Note: Flutter's ML ecosystem has limited ONNX support. TFLite is the recommended format for mobile inference.
