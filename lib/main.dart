@@ -4504,6 +4504,7 @@ class _PhotoTileState extends State<_PhotoTile> with SingleTickerProviderStateMi
         ),
       ),
     ),
+    ),
   );
   }
 }
