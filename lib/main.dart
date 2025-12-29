@@ -863,7 +863,12 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
   /// Update iOS home screen widget with current data
   void _updateWidget() {
-    if (_speciesDataMap.isEmpty) return;
+    debugPrint('_updateWidget called: speciesDataMap.length=${_speciesDataMap.length}, totalDetections=$_totalDetections');
+
+    if (_speciesDataMap.isEmpty) {
+      debugPrint('_updateWidget: No data to send (speciesDataMap is empty)');
+      return;
+    }
 
     // Find top species
     final sortedSpecies = _speciesDataMap.entries.toList()
@@ -876,6 +881,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     final lastDetection = sortedSpecies.length > 1
         ? sortedSpecies[1].key.replaceAll('_', ' ')
         : topSpecies;
+
+    debugPrint('_updateWidget: Sending - total=$_totalDetections, species=${_speciesDataMap.length}, top=$topSpecies');
 
     WidgetService.instance.updateWidget(
       totalDetections: _totalDetections,

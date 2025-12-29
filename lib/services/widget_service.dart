@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Service for updating iOS home screen widgets with bird detection data
@@ -27,15 +28,18 @@ class WidgetService {
       'lastUpdated': DateTime.now().toIso8601String(),
     };
 
+    debugPrint('WidgetService: Sending update - $totalDetections detections, $uniqueSpecies species');
+    debugPrint('WidgetService: Data = ${jsonEncode(data)}');
+
     try {
-      await _channel.invokeMethod('updateWidget', {
+      final result = await _channel.invokeMethod('updateWidget', {
         'appGroupId': _appGroupId,
         'key': 'widgetData',
         'data': jsonEncode(data),
       });
+      debugPrint('WidgetService: Update result = $result');
     } catch (e) {
-      // Widget update failed - not critical
-      print('Widget update failed: $e');
+      debugPrint('WidgetService: Update FAILED - $e');
     }
   }
 
