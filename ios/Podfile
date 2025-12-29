@@ -29,7 +29,6 @@ flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks! :linkage => :static
-  use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
@@ -60,8 +59,6 @@ post_install do |installer|
 
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-      config.build_settings['DEFINES_MODULE'] = 'YES'
-      config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
     end
 
     # Fix BoringSSL-GRPC -GCC_WARN_INHIBIT_ALL_WARNINGS flag issue for Xcode 16+
