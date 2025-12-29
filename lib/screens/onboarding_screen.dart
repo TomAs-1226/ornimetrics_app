@@ -39,11 +39,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   double _textScale = 1.0;
 
   // Additional customization
-  bool _showScientificNames = false;
   String _distanceUnit = 'km';
   bool _compactMode = false;
   int _defaultTab = 0;
   int _photoGridColumns = 2;
+
+  // Live update settings
+  bool _liveUpdatesEnabled = true;
+  bool _liveUpdateSound = true;
+  bool _liveUpdateVibration = true;
+  String _liveUpdateDisplayMode = 'banner';
+  List<String> _liveUpdateTypes = ['new_detection', 'rare_species', 'community'];
+
+  // Additional display settings
+  bool _showDetectionTime = true;
+  bool _showConfidence = true;
+  String _sortOrder = 'newest';
 
   // Auth state
   final _emailController = TextEditingController();
@@ -103,16 +114,27 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       _showNotifications = prefs.getBool('pref_notifications') ?? true;
       _temperatureUnit = prefs.getString('pref_temp_unit') ?? 'celsius';
       _textScale = prefs.getDouble('pref_text_scale') ?? 1.0;
-      _showScientificNames = prefs.getBool('pref_show_scientific_names') ?? false;
       _distanceUnit = prefs.getString('pref_distance_unit') ?? 'km';
       _compactMode = prefs.getBool('pref_compact_mode') ?? false;
       _defaultTab = prefs.getInt('pref_default_tab') ?? 0;
       _photoGridColumns = prefs.getInt('pref_photo_grid_columns') ?? 2;
+      // Live update settings
+      _liveUpdatesEnabled = prefs.getBool('pref_live_updates_enabled') ?? true;
+      _liveUpdateSound = prefs.getBool('pref_live_update_sound') ?? true;
+      _liveUpdateVibration = prefs.getBool('pref_live_update_vibration') ?? true;
+      _liveUpdateDisplayMode = prefs.getString('pref_live_update_display_mode') ?? 'banner';
+      _liveUpdateTypes = prefs.getStringList('pref_live_update_types') ?? ['new_detection', 'rare_species', 'community'];
+      // Display settings
+      _showDetectionTime = prefs.getBool('pref_show_detection_time') ?? true;
+      _showConfidence = prefs.getBool('pref_show_confidence') ?? true;
+      _sortOrder = prefs.getString('pref_sort_order') ?? 'newest';
       final seedValue = prefs.getInt('pref_seed_color');
       if (seedValue != null) {
         _selectedColor = Color(seedValue);
       }
     });
+    // Apply text scale immediately for live preview during onboarding rerun
+    textScaleNotifier.value = _textScale;
   }
 
   Future<void> _saveSettings() async {
@@ -126,11 +148,20 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     await prefs.setString('pref_temp_unit', _temperatureUnit);
     await prefs.setDouble('pref_text_scale', _textScale);
     await prefs.setInt('pref_seed_color', _selectedColor.value);
-    await prefs.setBool('pref_show_scientific_names', _showScientificNames);
     await prefs.setString('pref_distance_unit', _distanceUnit);
     await prefs.setBool('pref_compact_mode', _compactMode);
     await prefs.setInt('pref_default_tab', _defaultTab);
     await prefs.setInt('pref_photo_grid_columns', _photoGridColumns);
+    // Live update settings
+    await prefs.setBool('pref_live_updates_enabled', _liveUpdatesEnabled);
+    await prefs.setBool('pref_live_update_sound', _liveUpdateSound);
+    await prefs.setBool('pref_live_update_vibration', _liveUpdateVibration);
+    await prefs.setString('pref_live_update_display_mode', _liveUpdateDisplayMode);
+    await prefs.setStringList('pref_live_update_types', _liveUpdateTypes);
+    // Display settings
+    await prefs.setBool('pref_show_detection_time', _showDetectionTime);
+    await prefs.setBool('pref_show_confidence', _showConfidence);
+    await prefs.setString('pref_sort_order', _sortOrder);
 
     themeNotifier.value = _darkMode ? ThemeMode.dark : ThemeMode.light;
     hapticsEnabledNotifier.value = _hapticsEnabled;
@@ -138,11 +169,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     autoRefreshEnabledNotifier.value = _autoRefresh;
     autoRefreshIntervalNotifier.value = _refreshInterval;
     textScaleNotifier.value = _textScale;
-    showScientificNamesNotifier.value = _showScientificNames;
     distanceUnitNotifier.value = _distanceUnit;
     compactModeNotifier.value = _compactMode;
     defaultTabNotifier.value = _defaultTab;
     photoGridColumnsNotifier.value = _photoGridColumns;
+    liveUpdatesEnabledNotifier.value = _liveUpdatesEnabled;
+    liveUpdateSoundNotifier.value = _liveUpdateSound;
+    liveUpdateVibrationNotifier.value = _liveUpdateVibration;
+    liveUpdateDisplayModeNotifier.value = _liveUpdateDisplayMode;
+    liveUpdateTypesNotifier.value = _liveUpdateTypes;
   }
 
   void _nextPage() {
@@ -1120,20 +1155,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           const SizedBox(height: 12),
 
-          // Scientific names
-          _buildSwitchSetting(
-            colorScheme: colorScheme,
-            icon: Icons.science_outlined,
-            title: 'Scientific Names',
-            subtitle: 'Show Latin species names',
-            value: _showScientificNames,
-            onChanged: (v) {
-              _haptic();
-              setState(() => _showScientificNames = v);
-            },
-          ),
-          const SizedBox(height: 12),
-
           // Compact mode
           _buildSwitchSetting(
             colorScheme: colorScheme,
@@ -1144,11 +1165,71 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             onChanged: (v) {
               _haptic();
               setState(() => _compactMode = v);
+              compactModeNotifier.value = v;
             },
           ),
           const SizedBox(height: 12),
 
+          // Show detection time
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.access_time,
+            title: 'Show Detection Time',
+            subtitle: 'Display when birds were detected',
+            value: _showDetectionTime,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _showDetectionTime = v);
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Show confidence
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.verified_outlined,
+            title: 'Show Confidence',
+            subtitle: 'Display detection confidence percentage',
+            value: _showConfidence,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _showConfidence = v);
+            },
+          ),
+          const SizedBox(height: 24),
+
+          // Sort order
+          Text(
+            'Default Sort Order',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildSegmentedControl(
+            colorScheme: colorScheme,
+            value: _sortOrder,
+            options: const ['newest', 'oldest', 'name'],
+            labels: const ['Newest', 'Oldest', 'Name'],
+            onChanged: (v) {
+              _haptic();
+              setState(() => _sortOrder = v);
+            },
+          ),
+          const SizedBox(height: 24),
+
           // Distance unit
+          Text(
+            'Distance Unit',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
           _buildSegmentedControl(
             colorScheme: colorScheme,
             value: _distanceUnit,
@@ -1157,6 +1238,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             onChanged: (v) {
               _haptic();
               setState(() => _distanceUnit = v);
+              distanceUnitNotifier.value = v;
             },
           ),
           const SizedBox(height: 24),
@@ -1172,8 +1254,248 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           const SizedBox(height: 12),
           _buildTabSelector(colorScheme),
+
+          const SizedBox(height: 32),
+
+          // Live Updates Section
+          _buildLiveUpdatesSection(colorScheme),
         ],
       ),
+    );
+  }
+
+  Widget _buildLiveUpdatesSection(ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.notifications_active, color: colorScheme.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Live Updates',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Get real-time notifications when new detections occur',
+          style: TextStyle(
+            fontSize: 13,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Master toggle
+        _buildSwitchSetting(
+          colorScheme: colorScheme,
+          icon: Icons.cell_tower,
+          title: 'Enable Live Updates',
+          subtitle: 'Receive real-time detection alerts',
+          value: _liveUpdatesEnabled,
+          onChanged: (v) {
+            _haptic();
+            setState(() => _liveUpdatesEnabled = v);
+            liveUpdatesEnabledNotifier.value = v;
+          },
+        ),
+
+        if (_liveUpdatesEnabled) ...[
+          const SizedBox(height: 12),
+
+          // Display mode
+          Text(
+            'Notification Style',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildDisplayModeSelector(colorScheme),
+          const SizedBox(height: 16),
+
+          // Sound toggle
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.volume_up,
+            title: 'Sound',
+            subtitle: 'Play sound for new detections',
+            value: _liveUpdateSound,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _liveUpdateSound = v);
+              liveUpdateSoundNotifier.value = v;
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Vibration toggle
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.vibration,
+            title: 'Vibration',
+            subtitle: 'Vibrate for new detections',
+            value: _liveUpdateVibration,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _liveUpdateVibration = v);
+              liveUpdateVibrationNotifier.value = v;
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // Notification types
+          Text(
+            'Show Notifications For',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildNotificationTypeChips(colorScheme),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDisplayModeSelector(ColorScheme colorScheme) {
+    final modes = [
+      ('banner', Icons.notifications, 'Banner'),
+      ('popup', Icons.open_in_new, 'Popup'),
+      ('minimal', Icons.minimize, 'Minimal'),
+    ];
+
+    return Row(
+      children: modes.map((mode) {
+        final isSelected = _liveUpdateDisplayMode == mode.$1;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              _haptic();
+              setState(() => _liveUpdateDisplayMode = mode.$1);
+              liveUpdateDisplayModeNotifier.value = mode.$1;
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: EdgeInsets.only(right: mode.$1 != 'minimal' ? 8 : 0),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? colorScheme.primary
+                    : colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected
+                      ? colorScheme.primary
+                      : colorScheme.outline.withOpacity(0.2),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    mode.$2,
+                    size: 20,
+                    color: isSelected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    mode.$3,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      color: isSelected
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildNotificationTypeChips(ColorScheme colorScheme) {
+    final types = [
+      ('new_detection', Icons.add_alert, 'New Detections'),
+      ('rare_species', Icons.stars, 'Rare Species'),
+      ('community', Icons.people, 'Community'),
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: types.map((type) {
+        final isSelected = _liveUpdateTypes.contains(type.$1);
+        return GestureDetector(
+          onTap: () {
+            _haptic();
+            setState(() {
+              if (isSelected) {
+                _liveUpdateTypes.remove(type.$1);
+              } else {
+                _liveUpdateTypes.add(type.$1);
+              }
+            });
+            liveUpdateTypesNotifier.value = List.from(_liveUpdateTypes);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? colorScheme.primary.withOpacity(0.15)
+                  : colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected
+                    ? colorScheme.primary
+                    : colorScheme.outline.withOpacity(0.2),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isSelected ? Icons.check_circle : type.$2,
+                  size: 18,
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  type.$3,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

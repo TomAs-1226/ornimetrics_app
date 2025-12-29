@@ -50,12 +50,18 @@ final ValueNotifier<double> autoRefreshIntervalNotifier = ValueNotifier(60.0);
 final ValueNotifier<double> textScaleNotifier = ValueNotifier(1.0);
 
 // Additional customization notifiers
-final ValueNotifier<bool> showScientificNamesNotifier = ValueNotifier(false);
 final ValueNotifier<String> distanceUnitNotifier = ValueNotifier('km');
 final ValueNotifier<String> dateFormatNotifier = ValueNotifier('MMM d, yyyy');
 final ValueNotifier<bool> compactModeNotifier = ValueNotifier(false);
 final ValueNotifier<int> defaultTabNotifier = ValueNotifier(0);
 final ValueNotifier<int> photoGridColumnsNotifier = ValueNotifier(2);
+
+// Live update notification settings
+final ValueNotifier<bool> liveUpdatesEnabledNotifier = ValueNotifier(true);
+final ValueNotifier<bool> liveUpdateSoundNotifier = ValueNotifier(true);
+final ValueNotifier<bool> liveUpdateVibrationNotifier = ValueNotifier(true);
+final ValueNotifier<String> liveUpdateDisplayModeNotifier = ValueNotifier('banner'); // banner, popup, minimal
+final ValueNotifier<List<String>> liveUpdateTypesNotifier = ValueNotifier(['new_detection', 'rare_species', 'community']);
 
 // Firebase path for photo snapshots (each child: { image_url: string, timestamp: number or ISO string, species?: string })
 const String kPhotoFeedPath = 'photo_snapshots';
@@ -422,6 +428,23 @@ void main() async {
   autoRefreshEnabledNotifier.value = isAuto;
   final interval = prefs.getDouble('pref_auto_refresh_interval') ?? 60.0;
   autoRefreshIntervalNotifier.value = interval;
+
+  // Load customization settings
+  textScaleNotifier.value = prefs.getDouble('pref_text_scale') ?? 1.0;
+  distanceUnitNotifier.value = prefs.getString('pref_distance_unit') ?? 'km';
+  compactModeNotifier.value = prefs.getBool('pref_compact_mode') ?? false;
+  defaultTabNotifier.value = prefs.getInt('pref_default_tab') ?? 0;
+  photoGridColumnsNotifier.value = prefs.getInt('pref_photo_grid_columns') ?? 2;
+
+  // Load live update notification settings
+  liveUpdatesEnabledNotifier.value = prefs.getBool('pref_live_updates_enabled') ?? true;
+  liveUpdateSoundNotifier.value = prefs.getBool('pref_live_update_sound') ?? true;
+  liveUpdateVibrationNotifier.value = prefs.getBool('pref_live_update_vibration') ?? true;
+  liveUpdateDisplayModeNotifier.value = prefs.getString('pref_live_update_display_mode') ?? 'banner';
+  final savedTypes = prefs.getStringList('pref_live_update_types');
+  if (savedTypes != null) {
+    liveUpdateTypesNotifier.value = savedTypes;
+  }
 
   await NotificationsService.instance.load();
   await MaintenanceRulesEngine.instance.load();
