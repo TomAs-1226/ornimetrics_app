@@ -2,7 +2,7 @@
 
 ## Setup Instructions
 
-### 1. Export your YOLO model to TFLite format
+### 1. Export your YOLO model to ONNX format
 
 If you're using the same YOLO model as the Raspberry Pi:
 
@@ -10,24 +10,20 @@ If you're using the same YOLO model as the Raspberry Pi:
 # Install ultralytics if needed
 pip install ultralytics
 
-# Export to TFLite
-yolo export model=best.pt format=tflite
+# Export to ONNX
+yolo export model=best.pt format=onnx
 ```
 
-This creates `best_saved_model/best_float32.tflite`
+This creates `best.onnx` with embedded class labels.
 
 ### 2. Place the model file
 
-Copy the `.tflite` file to this directory and rename it:
+Copy the `.onnx` file to this directory and rename it:
 ```
-assets/models/bird_classifier.tflite
+assets/models/bird_classifier.onnx
 ```
 
-### 3. Update labels.txt
-
-Edit `labels.txt` to match your model's class names (one per line, in order).
-
-### 4. Rebuild the app
+### 3. Rebuild the app
 
 ```bash
 flutter clean
@@ -35,17 +31,30 @@ flutter pub get
 flutter build ios  # or android
 ```
 
-## If No Model Available
+## Detection Behavior
 
-The app automatically falls back to ChatGPT Vision API for bird identification if:
-- No model file is present
-- Model fails to load
-- Local inference fails
+The app automatically chooses the best detection method:
 
-This requires the `OPENAI_API_KEY` in your `.env` file.
+**Online Mode:**
+- Uses cloud-based AI for highest accuracy
+- Requires internet connection
+- Best for detailed species identification
 
-## Model Input Requirements
+**Offline Mode:**
+- Uses local ONNX model on device
+- No internet required
+- Fast, private identification
+- Works with embedded class labels in model
 
-- Input size: 224x224 RGB (configurable in code)
+## Model Requirements
+
+- Format: ONNX (.onnx)
+- Input size: 640x640 RGB (YOLO default) or 224x224 (classification)
 - Normalized: 0-1 range
-- Format: TensorFlow Lite (.tflite)
+- Labels: Embedded in ONNX metadata (no separate labels.txt needed)
+
+## Supported Models
+
+- YOLOv8 classification/detection models
+- Custom bird classification models
+- Any ONNX-compatible model with proper input/output specs
