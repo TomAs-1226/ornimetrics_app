@@ -1798,38 +1798,22 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                 safeLightHaptic();
                 Navigator.of(context).push(
                   PageRouteBuilder(
-                    transitionDuration: const Duration(milliseconds: 400),
-                    reverseTransitionDuration: const Duration(milliseconds: 350),
+                    opaque: false,
+                    barrierColor: Colors.black87,
+                    transitionDuration: const Duration(milliseconds: 350),
+                    reverseTransitionDuration: const Duration(milliseconds: 300),
                     pageBuilder: (_, __, ___) => RecentPhotoViewer(
                       photos: _photos,
                       initialIndex: i,
                     ),
                     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                      // Use a custom curve for smoother feel
-                      final curvedAnimation = CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                        reverseCurve: Curves.easeInCubic,
-                      );
-                      // Only fade the background, let Hero handle the image
-                      return Stack(
-                        children: [
-                          // Fade in the black background
-                          FadeTransition(
-                            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curvedAnimation),
-                            child: Container(color: Theme.of(context).scaffoldBackgroundColor),
-                          ),
-                          // The actual page content with Hero
-                          FadeTransition(
-                            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
-                              ),
-                            ),
-                            child: child,
-                          ),
-                        ],
+                      return FadeTransition(
+                        opacity: CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOut,
+                          reverseCurve: Curves.easeIn,
+                        ),
+                        child: child,
                       );
                     },
                   ),
@@ -4348,85 +4332,88 @@ class _PhotoTile extends StatefulWidget {
 
 
 class _PhotoTileState extends State<_PhotoTile> with SingleTickerProviderStateMixin {
-  late AnimationController _scaleController;
-  late Animation<double> _scaleAnimation;
+  late AnimationController _controller;
+  bool _isPressed = false;
 
   @override
   void initState() {
     super.initState();
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 150),
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 120),
       vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+      lowerBound: 0.0,
+      upperBound: 1.0,
     );
   }
 
   @override
   void dispose() {
-    _scaleController.dispose();
+    _controller.dispose();
     super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    _isPressed = true;
+    _controller.forward();
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    if (_isPressed) {
+      _controller.reverse().then((_) {
+        if (mounted) widget.onTap();
+      });
+    }
+    _isPressed = false;
+  }
+
+  void _onTapCancel() {
+    _isPressed = false;
+    _controller.reverse();
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.photo;
     return GestureDetector(
-      onTapDown: (_) => _scaleController.forward(),
-      onTapUp: (_) {
-        _scaleController.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _scaleController.reverse(),
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
       child: AnimatedBuilder(
-        animation: _scaleAnimation,
-        builder: (context, child) => Transform.scale(
-          scale: _scaleAnimation.value,
-          child: child,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Hero(
-                  tag: 'photo_hero_${p.url}',
-                  flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
-                    return AnimatedBuilder(
-                      animation: animation,
-                      builder: (context, child) {
-                        final curvedValue = Curves.easeInOutCubic.transform(animation.value);
-                        return Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.lerp(
-                              BorderRadius.circular(12),
-                              BorderRadius.circular(0),
-                              curvedValue,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3 * (1 - curvedValue)),
-                                blurRadius: 20 * (1 - curvedValue),
-                                spreadRadius: 2 * (1 - curvedValue),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.lerp(
-                              BorderRadius.circular(12),
-                              BorderRadius.circular(0),
-                              curvedValue,
-                            )!,
-                            child: _buildImageWidget(p.url, fit: BoxFit.cover),
-                          ),
-                        );
-                      },
-                    );
-                  },
+        animation: _controller,
+        builder: (context, child) {
+          final scale = 1.0 - (_controller.value * 0.04);
+          final brightness = 1.0 - (_controller.value * 0.1);
+          return Transform.scale(
+            scale: scale,
+            child: ColorFiltered(
+              colorFilter: ColorFilter.matrix(<double>[
+                brightness, 0, 0, 0, 0,
+                0, brightness, 0, 0, 0,
+                0, 0, brightness, 0, 0,
+                0, 0, 0, 1, 0,
+              ]),
+              child: child,
+            ),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              children: [
+                Positioned.fill(
                   child: _buildImageWidget(p.url, fit: BoxFit.cover),
                 ),
-              ),
             Positioned(
               left: 0,
               right: 0,
@@ -4532,91 +4519,115 @@ class RecentPhotoViewer extends StatefulWidget {
   State<RecentPhotoViewer> createState() => _RecentPhotoViewerState();
 }
 
-class _RecentPhotoViewerState extends State<RecentPhotoViewer> {
+class _RecentPhotoViewerState extends State<RecentPhotoViewer> with SingleTickerProviderStateMixin {
   late final PageController _pc = PageController(initialPage: widget.initialIndex);
+  late AnimationController _dismissController;
   int _index = 0;
+  double _dragOffset = 0;
+  bool _isDragging = false;
 
   @override
   void initState() {
     super.initState();
     _index = widget.initialIndex;
+    _dismissController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dismissController.dispose();
+    super.dispose();
+  }
+
+  void _handleVerticalDragUpdate(DragUpdateDetails details) {
+    setState(() {
+      _isDragging = true;
+      _dragOffset += details.delta.dy;
+    });
+  }
+
+  void _handleVerticalDragEnd(DragEndDetails details) {
+    final velocity = details.velocity.pixelsPerSecond.dy;
+    if (_dragOffset.abs() > 100 || velocity.abs() > 500) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _isDragging = false;
+        _dragOffset = 0;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.photos[_index];
+    final dismissProgress = (_dragOffset.abs() / 300).clamp(0.0, 1.0);
+    final scale = 1.0 - (dismissProgress * 0.15);
+    final opacity = 1.0 - (dismissProgress * 0.5);
+
     return Scaffold(
+      backgroundColor: Colors.black.withOpacity(opacity),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('${_index + 1} / ${widget.photos.length}'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: AnimatedOpacity(
+          opacity: _isDragging ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          child: Text(
+            '${_index + 1} / ${widget.photos.length}',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10),
             child: Center(
               child: Text(
                 DateFormat('MMM d, yyyy – hh:mm a').format(p.timestamp),
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
               ),
             ),
           ),
         ],
       ),
-      body: PageView.builder(
-        controller: _pc,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemCount: widget.photos.length,
-        physics: const BouncingScrollPhysics(),
-        itemBuilder: (_, i) {
-          final item = widget.photos[i];
-          // Only use Hero for the initially shown image to avoid conflicts
-          final isInitialPage = i == widget.initialIndex;
-          final imageWidget = _buildImageWidget(item.url, fit: BoxFit.contain);
-
-          return GestureDetector(
-            onVerticalDragEnd: (details) {
-              // Swipe down to dismiss
-              if (details.velocity.pixelsPerSecond.dy > 300) {
-                Navigator.of(context).pop();
-              }
+      body: GestureDetector(
+        onVerticalDragUpdate: _handleVerticalDragUpdate,
+        onVerticalDragEnd: _handleVerticalDragEnd,
+        onVerticalDragCancel: () => setState(() {
+          _isDragging = false;
+          _dragOffset = 0;
+        }),
+        child: AnimatedContainer(
+          duration: _isDragging ? Duration.zero : const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          transform: Matrix4.identity()
+            ..translate(0.0, _dragOffset)
+            ..scale(scale),
+          child: PageView.builder(
+            controller: _pc,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemCount: widget.photos.length,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (_, i) {
+              final item = widget.photos[i];
+              return InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(dismissProgress * 16),
+                    child: _buildImageWidget(item.url, fit: BoxFit.contain),
+                  ),
+                ),
+              );
             },
-            child: InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 5,
-              child: Center(
-                child: isInitialPage
-                    ? Hero(
-                        tag: 'photo_hero_${item.url}',
-                        flightShuttleBuilder: (flightContext, animation, flightDirection, fromHeroContext, toHeroContext) {
-                          return AnimatedBuilder(
-                            animation: animation,
-                            builder: (context, child) {
-                              final curvedValue = Curves.easeInOutCubic.transform(animation.value);
-                              return Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.lerp(
-                                    BorderRadius.circular(0),
-                                    BorderRadius.circular(12),
-                                    1 - curvedValue,
-                                  ),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.lerp(
-                                    BorderRadius.circular(0),
-                                    BorderRadius.circular(12),
-                                    1 - curvedValue,
-                                  )!,
-                                  child: imageWidget,
-                                ),
-                              );
-                            },
-                          );
-                        },
-                        child: imageWidget,
-                      )
-                    : imageWidget,
-              ),
-            ),
-          );
-        },
+          ),
+        ),
       ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(12),
@@ -5577,6 +5588,95 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               );
             },
           ),
+          // Secret options - only visible when easter egg is unlocked
+          if (_easterEggUnlocked) ...[
+            const Divider(),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.purple.withOpacity(0.05),
+                    Colors.blue.withOpacity(0.05),
+                    Colors.cyan.withOpacity(0.05),
+                  ],
+                ),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Colors.purple, Colors.blue, Colors.cyan],
+                      ).createShader(bounds),
+                      child: const Icon(Icons.restart_alt, color: Colors.white),
+                    ),
+                    title: const Text('Re-run Setup Wizard'),
+                    subtitle: const Text('Experience onboarding again'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      safeLightHaptic();
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Re-run Setup?'),
+                          content: const Text('This will show the onboarding screen again. Your settings and data will be preserved.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Continue'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && mounted) {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('onboarding_completed', false);
+                        if (mounted) {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => OnboardingScreen(
+                                onComplete: () async {
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.setBool('onboarding_completed', true);
+                                  if (context.mounted) {
+                                    Navigator.of(context).pushAndRemoveUntil(
+                                      MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                                      (_) => false,
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                            (_) => false,
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Colors.amber, Colors.orange, Colors.red],
+                      ).createShader(bounds),
+                      child: const Icon(Icons.videogame_asset, color: Colors.white),
+                    ),
+                    title: const Text('Bird Catcher Game'),
+                    subtitle: const Text('Play the hidden mini-game'),
+                    trailing: const Icon(Icons.play_arrow),
+                    onTap: () {
+                      safeLightHaptic();
+                      _showEasterEgg();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -5609,20 +5709,23 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
   late AnimationController _bgController;
   late AnimationController _birdController;
   final List<_FlyingBird> _birds = [];
+  final List<_CatchEffect> _catchEffects = [];
   int _score = 0;
   int _caughtBirds = 0;
+  int _combo = 0;
+  DateTime? _lastCatchTime;
   final _random = math.Random();
 
   final List<String> _birdEmojis = ['🐦', '🦅', '🦆', '🦉', '🐧', '🦜', '🕊️', '🦚', '🦢', '🦩'];
-  final List<String> _messages = [
-    'Nice catch!',
-    'Birder extraordinaire!',
-    'Sharp eyes!',
-    'Spotted!',
-    'Another one!',
-    'You\'re a natural!',
-    'Eagle eye!',
-    'Legendary!',
+  final List<String> _rareEmojis = ['🦤', '🐓', '🦃'];
+  final List<String> _catchEmojis = ['✨', '⭐', '💫', '🌟', '💥'];
+  final List<String> _comboMessages = [
+    'Nice!',
+    'Great!',
+    'Awesome!',
+    'Amazing!',
+    'Incredible!',
+    'LEGENDARY!',
   ];
 
   @override
@@ -5657,20 +5760,62 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
     }
   }
 
-  void _catchBird(int index) {
+  void _catchBird(int index, double x, double y) {
+    final now = DateTime.now();
+    final bird = _birds[index];
+
+    // Check for combo (catch within 1.5 seconds)
+    if (_lastCatchTime != null && now.difference(_lastCatchTime!).inMilliseconds < 1500) {
+      _combo++;
+    } else {
+      _combo = 1;
+    }
+    _lastCatchTime = now;
+
+    // Calculate points with combo multiplier
+    final basePoints = bird.emoji == '🦚' || bird.emoji == '🦩' ? 25 : 10;
+    final comboMultiplier = math.min(_combo, 5);
+    final points = basePoints * comboMultiplier;
+
     HapticFeedback.mediumImpact();
+
     setState(() {
       _birds.removeAt(index);
-      _score += 10;
+      _score += points;
       _caughtBirds++;
+
+      // Add catch effect
+      _catchEffects.add(_CatchEffect(
+        x: x,
+        y: y,
+        emoji: _catchEmojis[_random.nextInt(_catchEmojis.length)],
+        points: points,
+        combo: _combo,
+        createdAt: now,
+      ));
+    });
+
+    // Clean up old effects
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _catchEffects.removeWhere(
+            (e) => DateTime.now().difference(e.createdAt).inMilliseconds > 700,
+          );
+        });
+      }
     });
 
     // Spawn a new bird
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
+        // Small chance for rare bird
+        final isRare = _random.nextDouble() < 0.1;
         setState(() {
           _birds.add(_FlyingBird(
-            emoji: _birdEmojis[_random.nextInt(_birdEmojis.length)],
+            emoji: isRare
+                ? _rareEmojis[_random.nextInt(_rareEmojis.length)]
+                : _birdEmojis[_random.nextInt(_birdEmojis.length)],
             x: _random.nextBool() ? -0.1 : 1.1,
             y: _random.nextDouble() * 0.7 + 0.1,
             speed: 0.5 + _random.nextDouble() * 1.5,
@@ -5783,26 +5928,75 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
                         final baseX = bird.x + (_birdController.value * bird.speed * bird.direction * 0.3);
                         final wobbleY = math.sin(_birdController.value * math.pi * 4 + index) * 0.02;
 
+                        final posX = (baseX % 1.2 - 0.1) * screenWidth;
+                        final posY = (bird.y + wobbleY) * screenHeight;
                         return Positioned(
-                          left: (baseX % 1.2 - 0.1) * screenWidth,
-                          top: (bird.y + wobbleY) * screenHeight,
+                          left: posX,
+                          top: posY,
                           child: GestureDetector(
-                            onTap: () => _catchBird(index),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
+                            onTapDown: (details) => _catchBird(index, posX, posY),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
                               child: Transform(
                                 transform: Matrix4.identity()
                                   ..scale(bird.direction < 0 ? -1.0 : 1.0, 1.0),
                                 alignment: Alignment.center,
                                 child: Text(
                                   bird.emoji,
-                                  style: const TextStyle(fontSize: 36),
+                                  style: const TextStyle(fontSize: 38),
                                 ),
                               ),
                             ),
                           ),
                         );
                       },
+                    );
+                  }),
+
+                  // Catch effects
+                  ..._catchEffects.map((effect) {
+                    final age = DateTime.now().difference(effect.createdAt).inMilliseconds;
+                    final progress = (age / 700).clamp(0.0, 1.0);
+                    final opacity = 1.0 - progress;
+                    final scale = 1.0 + progress * 0.5;
+                    final yOffset = progress * -50;
+
+                    return Positioned(
+                      left: effect.x,
+                      top: effect.y + yOffset,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(effect.emoji, style: const TextStyle(fontSize: 30)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: effect.combo > 2
+                                        ? [Colors.purple, Colors.orange]
+                                        : [Colors.orange, Colors.amber],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  effect.combo > 1
+                                      ? '+${effect.points} x${effect.combo}'
+                                      : '+${effect.points}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   }),
 
@@ -5904,7 +6098,12 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
                           Container(width: 1, height: 30, color: Colors.grey[300]),
                           _buildStat('🎯', 'Score', '$_score'),
                           Container(width: 1, height: 30, color: Colors.grey[300]),
-                          _buildStat('✨', 'Active', '${_birds.length}'),
+                          _buildStat(
+                            _combo > 2 ? '🔥' : '⚡',
+                            'Combo',
+                            '${_combo}x',
+                            highlight: _combo > 2,
+                          ),
                         ],
                       ),
                     ),
@@ -5941,15 +6140,30 @@ class _BirdWatcherEasterEggState extends State<_BirdWatcherEasterEgg>
     );
   }
 
-  Widget _buildStat(String emoji, String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 20)),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 11)),
-      ],
+  Widget _buildStat(String emoji, String label, String value, {bool highlight = false}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: EdgeInsets.symmetric(horizontal: highlight ? 8 : 0, vertical: highlight ? 4 : 0),
+      decoration: BoxDecoration(
+        color: highlight ? Colors.orange.withOpacity(0.2) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: highlight ? Colors.deepOrange : null,
+            ),
+          ),
+          Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+        ],
+      ),
     );
   }
 }
@@ -5967,6 +6181,24 @@ class _FlyingBird {
     required this.y,
     required this.speed,
     required this.direction,
+  });
+}
+
+class _CatchEffect {
+  final double x;
+  final double y;
+  final String emoji;
+  final int points;
+  final int combo;
+  final DateTime createdAt;
+
+  _CatchEffect({
+    required this.x,
+    required this.y,
+    required this.emoji,
+    required this.points,
+    required this.combo,
+    required this.createdAt,
   });
 }
 
