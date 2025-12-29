@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+
+import 'package:image/image.dart' as img;
+import 'package:tflite_flutter/tflite_flutter.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -810,6 +814,9 @@ void main() async {
 
   // Load species info cache for ChatGPT integration
   await SpeciesInfoService.instance.loadCache();
+
+  // Initialize bird detection model (will fallback to ChatGPT if model not available)
+  await BirdDetectionService.instance.initialize();
 
   await NotificationsService.instance.load();
   await MaintenanceRulesEngine.instance.load();
@@ -8495,68 +8502,240 @@ class _ToolsScreenState extends State<ToolsScreen> {
 // AI Species Identifier Sheet - Full Implementation
 // ─────────────────────────────────────────────
 
-/// Service for running the PyTorch bird detection model.
+/// Service for running the TensorFlow Lite bird detection model.
 ///
 /// MODEL PLACEMENT INSTRUCTIONS:
 /// ─────────────────────────────────────────────
 /// 1. Create the directory: assets/models/
-/// 2. Place your PyTorch model file at: assets/models/bird_classifier.pt
-/// 3. Add to pubspec.yaml under flutter > assets:
-///      - assets/models/
+/// 2. Export your YOLO model to TFLite format:
+///    yolo export model=your_model.pt format=tflite
+/// 3. Place the model at: assets/models/bird_classifier.tflite
+/// 4. Create labels file at: assets/models/labels.txt (one species per line)
 ///
-/// For TorchScript models (.pt):
-///   - Use pytorch_mobile package
-///   - Model should be exported with torch.jit.script() or torch.jit.trace()
+/// CONVERTING FROM PYTORCH:
+///   Option 1 (YOLO): yolo export model=best.pt format=tflite
+///   Option 2 (General): PyTorch -> ONNX -> TFLite
+///     torch.onnx.export(model, input, "model.onnx")
+///     Then use onnx-tf and tflite_convert
 ///
-/// For TensorFlow Lite models (.tflite):
-///   - Use tflite_flutter package
-///   - Convert your PyTorch model to ONNX, then to TFLite
-///
-/// Expected model input: 224x224 RGB image tensor
+/// Expected model input: 640x640 or 224x224 RGB image tensor (normalized 0-1)
 /// Expected model output: Class probabilities for bird species
 /// ─────────────────────────────────────────────
 class BirdDetectionService {
   static final BirdDetectionService instance = BirdDetectionService._();
   BirdDetectionService._();
 
-  /// Path to the PyTorch model file
-  /// Place your model at: [project_root]/assets/models/bird_classifier.pt
-  static const String modelPath = 'assets/models/bird_classifier.pt';
+  static const String modelPath = 'assets/models/bird_classifier.tflite';
+  static const String labelsPath = 'assets/models/labels.txt';
 
+  Interpreter? _interpreter;
+  List<String> _labels = [];
+  bool _isInitialized = false;
+  String? _initError;
+
+  // Model input dimensions (adjust based on your model)
+  static const int inputSize = 224; // Common for classification models
+
+  /// Initialize the model - call this before first detection
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      // Load the TFLite model
+      _interpreter = await Interpreter.fromAsset(modelPath);
+
+      // Load labels
+      final labelsData = await rootBundle.loadString(labelsPath);
+      _labels = labelsData.split('\n').where((s) => s.trim().isNotEmpty).toList();
+
+      _isInitialized = true;
+      _initError = null;
+      debugPrint('BirdDetectionService: Model loaded successfully with ${_labels.length} classes');
+    } catch (e) {
+      _initError = e.toString();
+      debugPrint('BirdDetectionService: Failed to load model: $e');
+      // Model not available - will use ChatGPT fallback
+    }
+  }
+
+  /// Check if the local model is available
+  bool get isModelAvailable => _isInitialized && _interpreter != null;
+
+  /// Get initialization error if any
+  String? get initializationError => _initError;
+
+  /// Run inference on an image
   Future<Map<String, dynamic>> detectSpecies(Uint8List imageBytes) async {
-    // TODO: Integrate actual PyTorch model inference
-    // This would use tflite_flutter or pytorch_mobile package
-    // Example: final interpreter = await Interpreter.fromAsset(modelPath);
+    // Try local model first
+    if (_isInitialized && _interpreter != null) {
+      try {
+        return await _runLocalInference(imageBytes);
+      } catch (e) {
+        debugPrint('BirdDetectionService: Local inference failed, using ChatGPT: $e');
+        // Fall through to ChatGPT fallback
+      }
+    }
 
-    // Simulate model inference delay
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // Fallback to ChatGPT Vision API for identification
+    return await _identifyWithChatGPT(imageBytes);
+  }
 
-    // Simulated species detection with confidence scores
-    final species = [
-      {'name': 'Northern Cardinal', 'scientific': 'Cardinalis cardinalis'},
-      {'name': 'Blue Jay', 'scientific': 'Cyanocitta cristata'},
-      {'name': 'American Robin', 'scientific': 'Turdus migratorius'},
-      {'name': 'House Finch', 'scientific': 'Haemorhous mexicanus'},
-      {'name': 'Black-capped Chickadee', 'scientific': 'Poecile atricapillus'},
-      {'name': 'American Goldfinch', 'scientific': 'Spinus tristis'},
-      {'name': 'Downy Woodpecker', 'scientific': 'Dryobates pubescens'},
-      {'name': 'White-breasted Nuthatch', 'scientific': 'Sitta carolinensis'},
-    ];
+  /// Run local TFLite model inference
+  Future<Map<String, dynamic>> _runLocalInference(Uint8List imageBytes) async {
+    // Decode and preprocess image
+    final image = img.decodeImage(imageBytes);
+    if (image == null) throw Exception('Failed to decode image');
 
-    final random = math.Random();
-    final detected = species[random.nextInt(species.length)];
-    final confidence = 0.72 + random.nextDouble() * 0.26;
+    // Resize to model input size
+    final resized = img.copyResize(image, width: inputSize, height: inputSize);
+
+    // Convert to normalized float array [0, 1]
+    final input = Float32List(1 * inputSize * inputSize * 3);
+    int pixelIndex = 0;
+    for (int y = 0; y < inputSize; y++) {
+      for (int x = 0; x < inputSize; x++) {
+        final pixel = resized.getPixel(x, y);
+        input[pixelIndex++] = pixel.r / 255.0;
+        input[pixelIndex++] = pixel.g / 255.0;
+        input[pixelIndex++] = pixel.b / 255.0;
+      }
+    }
+
+    // Reshape for model input [1, 224, 224, 3]
+    final inputTensor = input.reshape([1, inputSize, inputSize, 3]);
+
+    // Prepare output buffer
+    final output = List.filled(_labels.length, 0.0).reshape([1, _labels.length]);
+
+    // Run inference
+    _interpreter!.run(inputTensor, output);
+
+    // Get output probabilities
+    final probabilities = (output[0] as List<double>);
+
+    // Find top predictions
+    final indexed = probabilities.asMap().entries.toList();
+    indexed.sort((a, b) => b.value.compareTo(a.value));
+
+    final topPredictions = indexed.take(5).map((e) {
+      return {
+        'species': _labels[e.key],
+        'confidence': e.value,
+      };
+    }).toList();
+
+    final topResult = topPredictions.first;
+    final speciesName = topResult['species'] as String;
+
+    // Get scientific name from ChatGPT cache or fetch it
+    String scientificName = '';
+    try {
+      final info = await SpeciesInfoService.instance.getSpeciesInfo(speciesName);
+      scientificName = info['scientific_name'] ?? '';
+    } catch (_) {}
 
     return {
-      'species': detected['name'],
-      'scientific_name': detected['scientific'],
-      'confidence': confidence,
-      'top_predictions': [
-        {'species': detected['name'], 'confidence': confidence},
-        {'species': species[(random.nextInt(species.length))]['name'], 'confidence': confidence - 0.15 - random.nextDouble() * 0.1},
-        {'species': species[(random.nextInt(species.length))]['name'], 'confidence': confidence - 0.3 - random.nextDouble() * 0.1},
-      ],
+      'species': speciesName,
+      'scientific_name': scientificName,
+      'confidence': topResult['confidence'],
+      'top_predictions': topPredictions,
+      'detection_method': 'local_model',
     };
+  }
+
+  /// Fallback: Use ChatGPT Vision API to identify species
+  Future<Map<String, dynamic>> _identifyWithChatGPT(Uint8List imageBytes) async {
+    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+    if (apiKey.isEmpty) {
+      throw Exception('OpenAI API key not configured');
+    }
+
+    // Convert image to base64
+    final base64Image = base64Encode(imageBytes);
+
+    final response = await http.post(
+      Uri.parse('https://api.openai.com/v1/chat/completions'),
+      headers: {
+        'Authorization': 'Bearer $apiKey',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'model': 'gpt-4o-mini',
+        'messages': [
+          {
+            'role': 'system',
+            'content': '''You are a bird identification expert. Analyze the image and identify the bird species.
+Return ONLY a JSON object with this exact structure:
+{
+  "species": "Common Name",
+  "scientific_name": "Scientific name",
+  "confidence": 0.85,
+  "reasoning": "Brief explanation of identifying features"
+}
+If no bird is visible or identifiable, return:
+{
+  "species": "Unknown",
+  "scientific_name": "",
+  "confidence": 0.0,
+  "reasoning": "Explanation"
+}'''
+          },
+          {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'image_url',
+                'image_url': {
+                  'url': 'data:image/jpeg;base64,$base64Image',
+                  'detail': 'high'
+                }
+              },
+              {
+                'type': 'text',
+                'text': 'Identify the bird species in this image.'
+              }
+            ]
+          }
+        ],
+        'max_tokens': 300,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('ChatGPT API error: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body);
+    final content = data['choices'][0]['message']['content'] as String;
+
+    // Parse JSON response
+    final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(content);
+    if (jsonMatch == null) {
+      throw Exception('Failed to parse ChatGPT response');
+    }
+
+    final result = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+
+    return {
+      'species': result['species'] ?? 'Unknown',
+      'scientific_name': result['scientific_name'] ?? '',
+      'confidence': (result['confidence'] ?? 0.0).toDouble(),
+      'reasoning': result['reasoning'] ?? '',
+      'top_predictions': [
+        {
+          'species': result['species'] ?? 'Unknown',
+          'confidence': (result['confidence'] ?? 0.0).toDouble(),
+        }
+      ],
+      'detection_method': 'chatgpt_vision',
+    };
+  }
+
+  /// Dispose of resources
+  void dispose() {
+    _interpreter?.close();
+    _interpreter = null;
+    _isInitialized = false;
   }
 }
 
