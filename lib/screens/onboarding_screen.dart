@@ -38,6 +38,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   String _temperatureUnit = 'celsius';
   double _textScale = 1.0;
 
+  // Additional customization
+  bool _showScientificNames = false;
+  String _distanceUnit = 'km';
+  bool _compactMode = false;
+  int _defaultTab = 0;
+  int _photoGridColumns = 2;
+
   // Auth state
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -96,6 +103,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       _showNotifications = prefs.getBool('pref_notifications') ?? true;
       _temperatureUnit = prefs.getString('pref_temp_unit') ?? 'celsius';
       _textScale = prefs.getDouble('pref_text_scale') ?? 1.0;
+      _showScientificNames = prefs.getBool('pref_show_scientific_names') ?? false;
+      _distanceUnit = prefs.getString('pref_distance_unit') ?? 'km';
+      _compactMode = prefs.getBool('pref_compact_mode') ?? false;
+      _defaultTab = prefs.getInt('pref_default_tab') ?? 0;
+      _photoGridColumns = prefs.getInt('pref_photo_grid_columns') ?? 2;
       final seedValue = prefs.getInt('pref_seed_color');
       if (seedValue != null) {
         _selectedColor = Color(seedValue);
@@ -114,12 +126,23 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     await prefs.setString('pref_temp_unit', _temperatureUnit);
     await prefs.setDouble('pref_text_scale', _textScale);
     await prefs.setInt('pref_seed_color', _selectedColor.value);
+    await prefs.setBool('pref_show_scientific_names', _showScientificNames);
+    await prefs.setString('pref_distance_unit', _distanceUnit);
+    await prefs.setBool('pref_compact_mode', _compactMode);
+    await prefs.setInt('pref_default_tab', _defaultTab);
+    await prefs.setInt('pref_photo_grid_columns', _photoGridColumns);
 
     themeNotifier.value = _darkMode ? ThemeMode.dark : ThemeMode.light;
     hapticsEnabledNotifier.value = _hapticsEnabled;
     seedColorNotifier.value = _selectedColor;
     autoRefreshEnabledNotifier.value = _autoRefresh;
     autoRefreshIntervalNotifier.value = _refreshInterval;
+    textScaleNotifier.value = _textScale;
+    showScientificNamesNotifier.value = _showScientificNames;
+    distanceUnitNotifier.value = _distanceUnit;
+    compactModeNotifier.value = _compactMode;
+    defaultTabNotifier.value = _defaultTab;
+    photoGridColumnsNotifier.value = _photoGridColumns;
   }
 
   void _nextPage() {
@@ -774,7 +797,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           const SizedBox(height: 32),
 
-          // Text scale
+          // Text scale - updates live
           _buildSliderSetting(
             colorScheme: colorScheme,
             icon: Icons.text_fields,
@@ -784,7 +807,27 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             max: 1.4,
             divisions: 6,
             label: '${(_textScale * 100).round()}%',
-            onChanged: (v) => setState(() => _textScale = v),
+            onChanged: (v) {
+              setState(() => _textScale = v);
+              textScaleNotifier.value = v; // Apply immediately for live preview
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Photo grid columns
+          _buildSliderSetting(
+            colorScheme: colorScheme,
+            icon: Icons.grid_view,
+            title: 'Photo Grid Columns',
+            value: _photoGridColumns.toDouble(),
+            min: 2,
+            max: 4,
+            divisions: 2,
+            label: '$_photoGridColumns columns',
+            onChanged: (v) {
+              _haptic();
+              setState(() => _photoGridColumns = v.round());
+            },
           ),
         ],
       ),
@@ -1063,8 +1106,134 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               onChanged: (v) => setState(() => _refreshInterval = v),
             ),
           ],
+
+          const SizedBox(height: 24),
+
+          // Display options section
+          Text(
+            'Display Options',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Scientific names
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.science_outlined,
+            title: 'Scientific Names',
+            subtitle: 'Show Latin species names',
+            value: _showScientificNames,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _showScientificNames = v);
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Compact mode
+          _buildSwitchSetting(
+            colorScheme: colorScheme,
+            icon: Icons.view_compact_outlined,
+            title: 'Compact Mode',
+            subtitle: 'Denser UI layout',
+            value: _compactMode,
+            onChanged: (v) {
+              _haptic();
+              setState(() => _compactMode = v);
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Distance unit
+          _buildSegmentedControl(
+            colorScheme: colorScheme,
+            value: _distanceUnit,
+            options: const ['km', 'mi'],
+            labels: const ['Kilometers', 'Miles'],
+            onChanged: (v) {
+              _haptic();
+              setState(() => _distanceUnit = v);
+            },
+          ),
+          const SizedBox(height: 24),
+
+          // Default tab
+          Text(
+            'Default Home Tab',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildTabSelector(colorScheme),
         ],
       ),
+    );
+  }
+
+  Widget _buildTabSelector(ColorScheme colorScheme) {
+    final tabs = [
+      (0, Icons.dashboard, 'Dashboard'),
+      (1, Icons.photo_camera_back_outlined, 'Recent'),
+      (2, Icons.cloud_outlined, 'Environment'),
+      (3, Icons.groups_2_outlined, 'Community'),
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tabs.map((tab) {
+        final isSelected = _defaultTab == tab.$1;
+        return GestureDetector(
+          onTap: () {
+            _haptic();
+            setState(() => _defaultTab = tab.$1);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? colorScheme.primary
+                  : colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? colorScheme.primary
+                    : colorScheme.outline.withOpacity(0.2),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  tab.$2,
+                  size: 18,
+                  color: isSelected
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  tab.$3,
+                  style: TextStyle(
+                    color: isSelected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurface,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

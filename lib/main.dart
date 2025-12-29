@@ -46,6 +46,17 @@ final ValueNotifier<bool> hapticsEnabledNotifier = ValueNotifier(true);
 final ValueNotifier<bool> autoRefreshEnabledNotifier = ValueNotifier(false);
 final ValueNotifier<double> autoRefreshIntervalNotifier = ValueNotifier(60.0);
 
+// Text scale notifier for accessibility
+final ValueNotifier<double> textScaleNotifier = ValueNotifier(1.0);
+
+// Additional customization notifiers
+final ValueNotifier<bool> showScientificNamesNotifier = ValueNotifier(false);
+final ValueNotifier<String> distanceUnitNotifier = ValueNotifier('km');
+final ValueNotifier<String> dateFormatNotifier = ValueNotifier('MMM d, yyyy');
+final ValueNotifier<bool> compactModeNotifier = ValueNotifier(false);
+final ValueNotifier<int> defaultTabNotifier = ValueNotifier(0);
+final ValueNotifier<int> photoGridColumnsNotifier = ValueNotifier(2);
+
 // Firebase path for photo snapshots (each child: { image_url: string, timestamp: number or ISO string, species?: string })
 const String kPhotoFeedPath = 'photo_snapshots';
 
@@ -452,38 +463,51 @@ class _WildlifeAppState extends State<WildlifeApp> {
         return ValueListenableBuilder<ThemeMode>(
           valueListenable: themeNotifier,
           builder: (_, mode, __) {
-            return MaterialApp(
-              navigatorObservers: [communityRouteObserver],
-              title: 'Ornimetrics Tracker',
-              debugShowCheckedModeBanner: false,
-              themeMode: mode,
-              theme: ThemeData(
-                colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
-                useMaterial3: true,
-                textTheme: Typography.material2021(platform: TargetPlatform.android).black,
-                scaffoldBackgroundColor: const Color(0xFFF4F7F6),
-                cardTheme: CardThemeData(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                appBarTheme: const AppBarTheme(),
-              ),
-              darkTheme: ThemeData(
-                colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-                useMaterial3: true,
-                textTheme: Typography.material2021(platform: TargetPlatform.android).white,
-                scaffoldBackgroundColor: const Color(0xFF121212),
-                cardTheme: const CardThemeData(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                ),
-                appBarTheme: const AppBarTheme(),
-              ),
-              home: _showOnboarding == null
-                  ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-                  : _showOnboarding!
-                      ? OnboardingScreen(onComplete: _onOnboardingComplete)
-                      : const WildlifeTrackerScreen(),
+            return ValueListenableBuilder<double>(
+              valueListenable: textScaleNotifier,
+              builder: (_, textScale, __) {
+                return MaterialApp(
+                  navigatorObservers: [communityRouteObserver],
+                  title: 'Ornimetrics Tracker',
+                  debugShowCheckedModeBanner: false,
+                  themeMode: mode,
+                  theme: ThemeData(
+                    colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
+                    useMaterial3: true,
+                    textTheme: Typography.material2021(platform: TargetPlatform.android).black,
+                    scaffoldBackgroundColor: const Color(0xFFF4F7F6),
+                    cardTheme: CardThemeData(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    appBarTheme: const AppBarTheme(),
+                  ),
+                  darkTheme: ThemeData(
+                    colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+                    useMaterial3: true,
+                    textTheme: Typography.material2021(platform: TargetPlatform.android).white,
+                    scaffoldBackgroundColor: const Color(0xFF121212),
+                    cardTheme: const CardThemeData(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                    ),
+                    appBarTheme: const AppBarTheme(),
+                  ),
+                  builder: (context, child) {
+                    return MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        textScaler: TextScaler.linear(textScale),
+                      ),
+                      child: child!,
+                    );
+                  },
+                  home: _showOnboarding == null
+                      ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+                      : _showOnboarding!
+                          ? OnboardingScreen(onComplete: _onOnboardingComplete)
+                          : const WildlifeTrackerScreen(),
+                );
+              },
             );
           },
         );
