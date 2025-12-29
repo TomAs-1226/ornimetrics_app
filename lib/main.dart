@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:image/image.dart' as img;
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -8545,28 +8544,17 @@ class BirdDetectionService {
   /// Check if service is ready
   bool get isModelAvailable => _isInitialized;
 
-  /// Check network connectivity
-  Future<bool> _isOnline() async {
-    try {
-      final result = await Connectivity().checkConnectivity();
-      return !result.contains(ConnectivityResult.none);
-    } catch (_) {
-      return false;
-    }
-  }
-
   /// Run species identification on an image
   Future<Map<String, dynamic>> detectSpecies(Uint8List imageBytes) async {
-    final online = await _isOnline();
-
-    if (!online) {
-      throw Exception('No internet connection. Please connect to identify species.');
-    }
-
     try {
       return await _identifyWithCloudAI(imageBytes);
+    } on http.ClientException {
+      throw Exception('No internet connection. Please check your network.');
     } catch (e) {
       debugPrint('BirdDetectionService: Detection failed: $e');
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('No internet connection. Please check your network.');
+      }
       throw Exception('Unable to identify species. Please try again.');
     }
   }

@@ -49,7 +49,6 @@ dependencies:
   geolocator: ^12.0.0
   local_auth: ^2.3.0
   image: ^4.1.7
-  connectivity_plus: ^6.0.3
 
 # App Icon
 flutter_launcher_icons:
