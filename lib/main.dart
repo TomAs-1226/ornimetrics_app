@@ -422,7 +422,32 @@ Example response format:
         });
       }
 
-      // Fetch from manual_detections (field observations)
+      // Fetch from user-specific field_detections (new per-user path)
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final userFieldSnap = await db.child('users/${user.uid}/field_detections').get();
+        if (userFieldSnap.exists && userFieldSnap.value is Map) {
+          final m = Map<dynamic, dynamic>.from(userFieldSnap.value as Map);
+          m.forEach((key, value) {
+            if (value is Map) {
+              final species = value['species']?.toString();
+              if (species != null && species.isNotEmpty) {
+                speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+                final ts = value['timestamp'];
+                int timestamp = 0;
+                if (ts is int) timestamp = ts;
+                else if (ts is double) timestamp = ts.toInt();
+                else if (ts is String) timestamp = int.tryParse(ts) ?? 0;
+                if (timestamp > (lastSeenTimestamp[species] ?? 0)) {
+                  lastSeenTimestamp[species] = timestamp;
+                }
+              }
+            }
+          });
+        }
+      }
+
+      // Also check legacy manual_detections for backwards compatibility
       final manualSnap = await db.child('manual_detections').get();
       if (manualSnap.exists && manualSnap.value is Map) {
         final m = Map<dynamic, dynamic>.from(manualSnap.value as Map);
@@ -6047,14 +6072,43 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      'Version 1.3.0',
+                      'Version 2.1.0',
                       style: TextStyle(
                         color: colorScheme.onPrimaryContainer,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  // What's New Section
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.tertiaryContainer.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colorScheme.tertiary.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.new_releases, size: 16, color: colorScheme.tertiary),
+                            const SizedBox(width: 6),
+                            Text("What's New in 2.1", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: colorScheme.tertiary)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _buildChangelogItem('Personal field observations (per-user)'),
+                        _buildChangelogItem('Enhanced AI species detection'),
+                        _buildChangelogItem('Real-time statistics from Firebase'),
+                        _buildChangelogItem('Migration tracking improvements'),
+                        _buildChangelogItem('Improved species library'),
+                        _buildChangelogItem('Better offline error handling'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   // Features list
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -6064,15 +6118,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     ),
                     child: Column(
                       children: [
-                        _buildFeatureRow(context, Icons.camera_alt, 'AI Bird Detection'),
+                        _buildFeatureRow(context, Icons.camera_alt, 'AI Species Identifier'),
                         const SizedBox(height: 8),
                         _buildFeatureRow(context, Icons.cloud, 'Weather Integration'),
                         const SizedBox(height: 8),
-                        _buildFeatureRow(context, Icons.groups, 'Community Center'),
+                        _buildFeatureRow(context, Icons.analytics, 'Detection Analytics'),
                         const SizedBox(height: 8),
-                        _buildFeatureRow(context, Icons.notifications, 'Smart Alerts'),
+                        _buildFeatureRow(context, Icons.flight, 'Migration Tracking'),
                         const SizedBox(height: 8),
-                        _buildFeatureRow(context, Icons.offline_bolt, 'Offline Support'),
+                        _buildFeatureRow(context, Icons.menu_book, 'Species Library'),
                       ],
                     ),
                   ),
@@ -6134,6 +6188,19 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
+  Widget _buildChangelogItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• ', style: TextStyle(fontSize: 12)),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
+  }
+
   void _showTermsOfService() {
     final colorScheme = Theme.of(context).colorScheme;
     showDialog(
@@ -6167,29 +6234,37 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               ),
               const SizedBox(height: 16),
               _buildTosSection('1. Acceptance of Terms',
-                'By downloading, installing, or using Ornimetrics ("the App"), you agree to be bound by these Terms of Service. The App is provided for personal, non-commercial bird watching, wildlife monitoring, and feeder management purposes.'),
-              _buildTosSection('2. User Account',
-                'You may need to create an account to access certain features. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.'),
-              _buildTosSection('3. Privacy & Data Collection',
-                'We collect usage data, detection photos, and device information to improve the App. Photos are stored securely on Firebase servers. Location data is used solely for weather integration and local species recommendations. We do not sell your personal data to third parties. See our Privacy Policy for details.'),
-              _buildTosSection('4. Community Guidelines',
-                'The Community Center is a shared space. Users must be respectful and constructive. Prohibited content includes: spam, harassment, hate speech, explicit content, and misinformation. Violations may result in content removal or account suspension.'),
-              _buildTosSection('5. AI & Machine Learning',
-                'AI-powered species detection uses on-device machine learning for fast, private identification. Results are for informational purposes only and may not always be accurate. Do not rely solely on AI for critical species identification.'),
-              _buildTosSection('5a. Model Improvement Program',
-                'You may optionally participate in our Model Improvement Program. If you opt in, your detection images may be used to train and improve our AI models. Images are anonymized, stored securely, and used solely for model improvement. You can opt out at any time in Settings. Participation is voluntary and does not affect app functionality.'),
-              _buildTosSection('6. Intellectual Property',
-                'The App, including its design, features, and content, is protected by intellectual property laws. User-generated content (photos, comments) remains your property, but you grant us a license to use it within the App.'),
-              _buildTosSection('7. Data Export & Portability',
-                'You may export your detection data at any time using the Export feature. Exported data is provided in standard formats (CSV, JSON) for your convenience.'),
-              _buildTosSection('8. Disclaimer of Warranties',
-                'Ornimetrics is provided "as is" without warranties of any kind. We do not guarantee uninterrupted service, accuracy of AI detection, or compatibility with all devices.'),
-              _buildTosSection('9. Limitation of Liability',
-                'We are not liable for any indirect, incidental, or consequential damages arising from App use. Our total liability is limited to the amount you paid for the App (if any).'),
-              _buildTosSection('10. Changes to Terms',
-                'We may update these terms periodically. Significant changes will be communicated through the App. Continued use after changes constitutes acceptance of the new terms.'),
-              _buildTosSection('11. Contact',
-                'For questions about these terms, contact us at support@ornimetrics.app'),
+                'By downloading, installing, or using Ornimetrics ("the App"), you agree to be bound by these Terms of Service. The App is provided for personal, non-commercial bird watching, wildlife monitoring, and species observation purposes. If you do not agree to these terms, please do not use the App.'),
+              _buildTosSection('2. User Account & Authentication',
+                'An account is required to save field observations, access personal detection history, and use cloud-based features. You are responsible for maintaining the confidentiality of your account credentials. You must be at least 13 years old to create an account. Each user may only maintain one account.'),
+              _buildTosSection('3. Field Observations',
+                'Field observations are stored securely in your personal account space. Your observation data (species, location, photos, timestamps) is private to your account unless you explicitly choose to share it. You retain ownership of your observation data and photos.'),
+              _buildTosSection('4. Privacy & Data Collection',
+                'We collect: (a) Detection photos when you use the AI identifier, (b) Location data for weather and local species info, (c) Usage analytics to improve the App, (d) Device information for compatibility. Photos are stored securely on Firebase servers. Location data is used solely for weather integration and species recommendations. We do not sell your personal data to third parties.'),
+              _buildTosSection('5. AI & Species Detection',
+                'Our AI-powered species detection provides identification suggestions based on image analysis. Results are for informational purposes only and may not always be accurate. Do not rely solely on AI for critical identification. The App uses cloud-based AI processing when online. Identification accuracy varies based on image quality and lighting conditions.'),
+              _buildTosSection('6. Model Improvement Program',
+                'You may optionally participate in our Model Improvement Program through Settings. If you opt in: (a) Your detection images may be used to train and improve our AI models, (b) Images are anonymized and stripped of personal metadata, (c) Data is stored securely and used solely for model training, (d) You can opt out at any time without losing any functionality, (e) Previously contributed images remain in the training dataset. Participation helps improve identification accuracy for all users.'),
+              _buildTosSection('7. Data Security',
+                'We implement industry-standard security measures including: encrypted data transmission (HTTPS/TLS), secure Firebase authentication, isolated user data storage, and regular security audits. However, no system is completely secure, and we cannot guarantee absolute security.'),
+              _buildTosSection('8. Acceptable Use',
+                'You agree not to: (a) Upload inappropriate or illegal content, (b) Attempt to reverse engineer the App, (c) Use the App for commercial purposes without permission, (d) Interfere with App functionality or servers, (e) Impersonate other users, (f) Submit false or misleading observation data.'),
+              _buildTosSection('9. Intellectual Property',
+                'The App, including its design, features, code, and content, is protected by intellectual property laws. User-generated content (photos, observations) remains your property, but you grant us a non-exclusive license to display and process it within the App.'),
+              _buildTosSection('10. Data Export & Deletion',
+                'You may export your detection data at any time. To request account deletion, contact support. Upon deletion, your personal data will be removed within 30 days, except for anonymized data already used for model training.'),
+              _buildTosSection('11. Third-Party Services',
+                'The App integrates with third-party services including Firebase (data storage), weather APIs (current conditions), and cloud AI services (species detection). These services have their own privacy policies and terms.'),
+              _buildTosSection('12. Disclaimer of Warranties',
+                'Ornimetrics is provided "as is" without warranties of any kind, express or implied. We do not guarantee: uninterrupted service availability, accuracy of AI detection or species information, compatibility with all devices, or real-time data synchronization.'),
+              _buildTosSection('13. Limitation of Liability',
+                'We are not liable for any indirect, incidental, special, or consequential damages arising from App use, including but not limited to: data loss, incorrect species identification, or service interruptions. Our total liability is limited to the amount you paid for the App.'),
+              _buildTosSection('14. Changes to Terms',
+                'We may update these terms periodically. Version 2.1 is effective December 2025. Significant changes will be communicated through in-app notifications. Continued use after changes constitutes acceptance of the new terms.'),
+              _buildTosSection('15. Governing Law',
+                'These terms are governed by applicable laws. Any disputes shall be resolved through good-faith negotiation or binding arbitration.'),
+              _buildTosSection('16. Contact Us',
+                'For questions, concerns, or data requests, contact us at support@ornimetrics.app. We aim to respond within 48 hours.'),
             ],
           ),
         ),
@@ -7202,7 +7277,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               child: const Icon(Icons.eco, color: Colors.white),
             ),
             title: const Text('AI Habitat Advisor'),
-            subtitle: const Text('Get feeder recommendations'),
+            subtitle: const Text('Get habitat improvement tips'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               safeLightHaptic();
@@ -8111,10 +8186,10 @@ class _ToolsScreenState extends State<ToolsScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            _buildRecommendationTile(colorScheme, '1', 'Add a water feature', 'Increases visits by 40%'),
-            _buildRecommendationTile(colorScheme, '2', 'Plant native shrubs', 'Provides shelter'),
-            _buildRecommendationTile(colorScheme, '3', 'Install a suet feeder', 'Attracts woodpeckers'),
-            _buildRecommendationTile(colorScheme, '4', 'Clean feeders weekly', 'Prevents disease'),
+            _buildRecommendationTile(colorScheme, '1', 'Add a water feature', 'Increases bird visits by 40%'),
+            _buildRecommendationTile(colorScheme, '2', 'Plant native shrubs', 'Provides natural shelter'),
+            _buildRecommendationTile(colorScheme, '3', 'Create brush piles', 'Offers cover for ground birds'),
+            _buildRecommendationTile(colorScheme, '4', 'Leave seed heads', 'Natural food source in winter'),
             const SizedBox(height: 20),
           ],
         ),
@@ -9443,8 +9518,36 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
       return;
     }
 
+    // Require user to be logged in
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.login, color: Colors.white),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Please sign in to save field observations')),
+              ],
+            ),
+            backgroundColor: Colors.orange[700],
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Sign In',
+              textColor: Colors.white,
+              onPressed: () {
+                // Navigate to login if there's a login screen
+              },
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isSaving = true);
-    debugPrint('Saving detection: $_identifiedSpecies');
+    debugPrint('Saving detection: $_identifiedSpecies for user: ${user.uid}');
 
     try {
       final db = primaryDatabase().ref();
@@ -9458,6 +9561,8 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         'time_of_day': DateFormat('h:mm a').format(now),
         'date': DateFormat('yyyy-MM-dd').format(now),
         'source': 'field_observation',
+        'user_id': user.uid,
+        'user_email': user.email,
       };
 
       // Add location if enabled and available
@@ -9484,11 +9589,11 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         detectionData['predictions'] = _topPredictions;
       }
 
-      // Upload image to Firebase Storage if available
+      // Upload image to Firebase Storage if available (user-specific path)
       if (_imageBytes != null) {
         try {
           final storage = FirebaseStorage.instance;
-          final ref = storage.ref().child('field_detections/${now.millisecondsSinceEpoch}.jpg');
+          final ref = storage.ref().child('users/${user.uid}/field_detections/${now.millisecondsSinceEpoch}.jpg');
           await ref.putData(_imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
           final url = await ref.getDownloadURL();
           detectionData['image_url'] = url;
@@ -9497,7 +9602,8 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         }
       }
 
-      await db.child('manual_detections').push().set(detectionData);
+      // Save to user-specific path
+      await db.child('users/${user.uid}/field_detections').push().set(detectionData);
 
       // Upload to training pool if user opted in to Model Improvement Program
       bool contributedToTraining = false;
@@ -10084,7 +10190,14 @@ class _StatisticsSheetState extends State<_StatisticsSheet> {
       // Get photo_snapshots data
       final snapshotsSnap = await db.child('photo_snapshots').get();
 
-      // Get manual_detections data
+      // Get user-specific field_detections (primary source)
+      final user = FirebaseAuth.instance.currentUser;
+      DataSnapshot? userFieldSnap;
+      if (user != null) {
+        userFieldSnap = await db.child('users/${user.uid}/field_detections').get();
+      }
+
+      // Get legacy manual_detections data (for backwards compatibility)
       final manualSnap = await db.child('manual_detections').get();
 
       // Get detections summary data
@@ -10121,7 +10234,31 @@ class _StatisticsSheetState extends State<_StatisticsSheet> {
         }
       }
 
-      // Process manual_detections
+      // Process user-specific field_detections (primary source for current user)
+      if (userFieldSnap != null && userFieldSnap.exists && userFieldSnap.value != null) {
+        final data = userFieldSnap.value as Map<dynamic, dynamic>;
+        for (final entry in data.entries) {
+          final detection = entry.value as Map<dynamic, dynamic>?;
+          if (detection != null) {
+            total++;
+            final species = detection['species']?.toString() ?? 'Unknown';
+            speciesCounts[species] = (speciesCounts[species] ?? 0) + 1;
+
+            final timestamp = detection['timestamp'];
+            if (timestamp != null) {
+              final date = DateTime.fromMillisecondsSinceEpoch(timestamp is int ? timestamp : int.tryParse(timestamp.toString()) ?? 0);
+              final dateStr = DateFormat('yyyy-MM-dd').format(date);
+              if (dateStr == todayStr) todayCount++;
+              if (date.isAfter(weekStart)) {
+                weekCount++;
+                weeklyActivity[date.weekday - 1] = (weeklyActivity[date.weekday - 1] ?? 0) + 1;
+              }
+            }
+          }
+        }
+      }
+
+      // Process legacy manual_detections (for backwards compatibility)
       if (manualSnap.exists && manualSnap.value != null) {
         final data = manualSnap.value as Map<dynamic, dynamic>;
         for (final entry in data.entries) {
