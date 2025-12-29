@@ -40,15 +40,18 @@ end
 
 post_install do |installer|
   # Fix gRPC-Core C++ template issue for Xcode 16.3+
-  grpc_file_path = "#{installer.sandbox.root}/gRPC-Core/src/core/lib/promise/detail/basic_seq.h"
-  if File.exist?(grpc_file_path)
-    file_content = File.read(grpc_file_path)
-    problematic_line = 'return Traits::template CallSeqFactory(f_, *cur_, std::move(arg));'
-    correct_line = 'return Traits::template CallSeqFactory<>(f_, *cur_, std::move(arg));'
-    if file_content.include?(problematic_line)
-      puts "Patching gRPC-Core basic_seq.h for Xcode 16.3+ compatibility..."
-      file_content.gsub!(problematic_line, correct_line)
-      File.open(grpc_file_path, "w") { |file| file.puts file_content }
+  # Patch ALL occurrences of CallSeqFactory missing template args
+  pods_root = installer.sandbox.root.to_s
+  grpc_files = Dir.glob("#{pods_root}/gRPC-Core/**/*.h") + Dir.glob("#{pods_root}/gRPC-C++/**/*.h")
+  grpc_files.each do |file_path|
+    next unless File.exist?(file_path)
+    content = File.read(file_path)
+    # Match Traits::template CallSeqFactory( without <>
+    if content =~ /Traits::template\s+CallSeqFactory\s*\(/
+      puts "Patching #{file_path} for Xcode 16.3+ compatibility..."
+      # Add <> after CallSeqFactory if missing
+      new_content = content.gsub(/Traits::template\s+CallSeqFactory\s*\(/, 'Traits::template CallSeqFactory<>(')
+      File.write(file_path, new_content)
     end
   end
 
