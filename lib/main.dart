@@ -49,6 +49,104 @@ final ValueNotifier<double> autoRefreshIntervalNotifier = ValueNotifier(60.0);
 // Firebase path for photo snapshots (each child: { image_url: string, timestamp: number or ISO string, species?: string })
 const String kPhotoFeedPath = 'photo_snapshots';
 
+// ─────────────────────────────────────────────
+// Local Cache Service - Offline Data Persistence
+// ─────────────────────────────────────────────
+class LocalCacheService {
+  static const String _keySpeciesData = 'cache_species_data';
+  static const String _keyTotalDetections = 'cache_total_detections';
+  static const String _keyPhotos = 'cache_photos';
+  static const String _keyLastCacheTime = 'cache_last_updated';
+  static const String _keyTrendRollup = 'cache_trend_rollup';
+
+  static Future<void> cacheSpeciesData(Map<String, double> speciesMap, int totalDetections) async {
+    final prefs = await SharedPreferences.getInstance();
+    final speciesJson = json.encode(speciesMap.map((k, v) => MapEntry(k, v)));
+    await prefs.setString(_keySpeciesData, speciesJson);
+    await prefs.setInt(_keyTotalDetections, totalDetections);
+    await prefs.setString(_keyLastCacheTime, DateTime.now().toIso8601String());
+  }
+
+  static Future<({Map<String, double> species, int total, DateTime? cachedAt})?> loadCachedSpeciesData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final speciesJson = prefs.getString(_keySpeciesData);
+      final total = prefs.getInt(_keyTotalDetections);
+      final cachedAtStr = prefs.getString(_keyLastCacheTime);
+
+      if (speciesJson == null || total == null) return null;
+
+      final Map<String, dynamic> decoded = json.decode(speciesJson);
+      final species = decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
+      final cachedAt = cachedAtStr != null ? DateTime.tryParse(cachedAtStr) : null;
+
+      return (species: species, total: total, cachedAt: cachedAt);
+    } catch (e) {
+      debugPrint('LocalCacheService: Failed to load species cache: $e');
+      return null;
+    }
+  }
+
+  static Future<void> cachePhotos(List<DetectionPhoto> photos) async {
+    final prefs = await SharedPreferences.getInstance();
+    // Only cache the most recent 50 photos to keep storage reasonable
+    final toCache = photos.take(50).map((p) => p.toMap()).toList();
+    await prefs.setString(_keyPhotos, json.encode(toCache));
+  }
+
+  static Future<List<DetectionPhoto>?> loadCachedPhotos() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final photosJson = prefs.getString(_keyPhotos);
+
+      if (photosJson == null) return null;
+
+      final List<dynamic> decoded = json.decode(photosJson);
+      return decoded.map((m) => DetectionPhoto.fromMap(Map<String, dynamic>.from(m))).toList();
+    } catch (e) {
+      debugPrint('LocalCacheService: Failed to load photos cache: $e');
+      return null;
+    }
+  }
+
+  static Future<void> cacheTrendRollup(TrendRollup rollup) async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = json.encode({
+      'recentTotal': rollup.recentTotal,
+      'priorTotal': rollup.priorTotal,
+      'busiestDayKey': rollup.busiestDayKey,
+      'busiestDayTotal': rollup.busiestDayTotal,
+    });
+    await prefs.setString(_keyTrendRollup, data);
+  }
+
+  static Future<TrendRollup?> loadCachedTrendRollup() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_keyTrendRollup);
+
+      if (data == null) return null;
+
+      final Map<String, dynamic> decoded = json.decode(data);
+      return TrendRollup(
+        recentTotal: decoded['recentTotal'] ?? 0,
+        priorTotal: decoded['priorTotal'] ?? 0,
+        busiestDayKey: decoded['busiestDayKey'],
+        busiestDayTotal: decoded['busiestDayTotal'] ?? 0,
+      );
+    } catch (e) {
+      debugPrint('LocalCacheService: Failed to load trend rollup cache: $e');
+      return null;
+    }
+  }
+
+  static Future<DateTime?> getLastCacheTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_keyLastCacheTime);
+    return str != null ? DateTime.tryParse(str) : null;
+  }
+}
+
 class DetectionPhoto {
   final String url;
   final DateTime timestamp;
@@ -97,6 +195,15 @@ class DetectionPhoto {
       )
           : null,
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'url': url,
+      'timestamp': timestamp.toIso8601String(),
+      'species': species,
+      if (weatherAtCapture != null) 'weather': weatherAtCapture!.toMap(),
+    };
   }
 
   DetectionPhoto withWeather(WeatherSnapshot snapshot) {
@@ -551,6 +658,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   bool _isLoading = true;
   String _error = '';
   DateTime? _lastUpdated;
+  bool _isUsingCachedData = false;
+  DateTime? _cachedDataTime;
   int _lastUsageCount = 0;
   DateTime? _lastUsageSampleAt;
   WeatherProvider _weatherProvider = RealWeatherProvider(
@@ -653,12 +762,45 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     _loadAiPrefs();
     _loadTasks();
     _captureLocation(); // Do not block initial renders on location.
+    // Load cached data immediately for instant display, then fetch fresh data
+    _loadCachedDataAndRefresh();
+    _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
+  }
+
+  /// Load cached data first for instant display, then fetch fresh data in background
+  Future<void> _loadCachedDataAndRefresh() async {
+    // First, try to load cached data for instant display
+    final cachedSpecies = await LocalCacheService.loadCachedSpeciesData();
+    final cachedPhotos = await LocalCacheService.loadCachedPhotos();
+
+    if (cachedSpecies != null && cachedSpecies.species.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _totalDetections = cachedSpecies.total;
+        _speciesDataMap = cachedSpecies.species;
+        _isLoading = false;
+        _lastUpdated = cachedSpecies.cachedAt;
+        _isUsingCachedData = true;
+        _cachedDataTime = cachedSpecies.cachedAt;
+      });
+      _rebuildTrendSignals();
+      _updateWidget();
+    }
+
+    if (cachedPhotos != null && cachedPhotos.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _photos = cachedPhotos;
+        _loadingPhotos = false;
+      });
+    }
+
+    // Then fetch fresh data in background
     unawaited(Future(() async {
       await _fetchTodaySummaryFlexible();
       await _fetchPhotoSnapshots();
       await _loadTrendSummaries();
     }));
-    _aiAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
   }
 
   Future<void> _maybePromptNotifications() async {
@@ -1054,12 +1196,17 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         prefs: NotificationsService.instance.preferences.value,
       ));
 
+      // Cache the data for offline use
+      unawaited(LocalCacheService.cacheSpeciesData(species, total));
+
       if (!mounted) return;
       setState(() {
         _totalDetections = total;
         _speciesDataMap = species;
         _isLoading = false;
         _lastUpdated = DateTime.now();
+        _isUsingCachedData = false;
+        _cachedDataTime = null;
         _error = species.isEmpty
             ? 'No summary found for $today. Showing latest available if present.'
             : '';
@@ -1067,15 +1214,33 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       _rebuildTrendSignals();
       _updateWidget();
     } catch (e) {
+      // Try to load from cache on network failure
+      final cached = await LocalCacheService.loadCachedSpeciesData();
       if (!mounted) return;
-      setState(() {
-        _totalDetections = 0;
-        _speciesDataMap = {};
-        _isLoading = false;
-        _lastUpdated = DateTime.now();
-        _error = 'Failed to load data: $e';
-      });
-      _rebuildTrendSignals();
+
+      if (cached != null && cached.species.isNotEmpty) {
+        setState(() {
+          _totalDetections = cached.total;
+          _speciesDataMap = cached.species;
+          _isLoading = false;
+          _lastUpdated = cached.cachedAt;
+          _isUsingCachedData = true;
+          _cachedDataTime = cached.cachedAt;
+          _error = '';
+        });
+        _rebuildTrendSignals();
+        _updateWidget();
+      } else {
+        setState(() {
+          _totalDetections = 0;
+          _speciesDataMap = {};
+          _isLoading = false;
+          _lastUpdated = DateTime.now();
+          _isUsingCachedData = false;
+          _error = 'Failed to load data: $e';
+        });
+        _rebuildTrendSignals();
+      }
     }
   }
 
@@ -1146,6 +1311,9 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         _photoError = _locationStatus ?? 'Location permission is required to tag weather on snapshots.';
       }
 
+      // Cache photos for offline use
+      unawaited(LocalCacheService.cachePhotos(items));
+
       if (!mounted) return;
       setState(() {
         _photos = items;
@@ -1159,12 +1327,25 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
       });
       _rebuildTrendSignals();
     } catch (e) {
+      // Try to load from cache on network failure
+      final cachedPhotos = await LocalCacheService.loadCachedPhotos();
       if (!mounted) return;
-      setState(() {
-        _photoError = 'Failed to load snapshots: $e';
-        _loadingPhotos = false;
-        _photosLastUpdated = DateTime.now();
-      });
+
+      if (cachedPhotos != null && cachedPhotos.isNotEmpty) {
+        setState(() {
+          _photos = cachedPhotos;
+          _loadingPhotos = false;
+          _photosLastUpdated = null; // Will show as cached
+          _photoError = '';
+        });
+        _rebuildTrendSignals();
+      } else {
+        setState(() {
+          _photoError = 'Failed to load snapshots: $e';
+          _loadingPhotos = false;
+          _photosLastUpdated = DateTime.now();
+        });
+      }
     }
   }
 
@@ -1668,6 +1849,81 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildOfflineBanner() {
+    final timeAgo = _cachedDataTime != null
+        ? _formatTimeAgo(_cachedDataTime!)
+        : 'some time ago';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.orange.shade700,
+            Colors.orange.shade600,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, color: Colors.white, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Offline Mode',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'Showing cached data from $timeAgo',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              safeLightHaptic();
+              _refreshAll();
+            },
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.white.withOpacity(0.2),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d').format(dateTime);
+  }
+
   Widget _buildDashboardTab() {
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
@@ -1681,6 +1937,8 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         controller: _scrollController,
         padding: const EdgeInsets.all(16.0),
         children: [
+          // Offline mode banner
+          if (_isUsingCachedData) _buildOfflineBanner(),
           const Text(
             'Live Animal Detection',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -1688,13 +1946,35 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           if (_lastUpdated != null)
             Padding(
               padding: const EdgeInsets.only(top: 4.0, bottom: 12.0),
-              child: Text(
-                'Last updated: ${DateFormat('MMM d, yyyy – hh:mm a').format(_lastUpdated!)}',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              child: Row(
+                children: [
+                  Text(
+                    'Last updated: ${DateFormat('MMM d, yyyy – hh:mm a').format(_lastUpdated!)}',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  if (_isUsingCachedData) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'CACHED',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           Text(
-            'Real-time data from Ornimetrics',
+            _isUsingCachedData ? 'Cached data from Ornimetrics' : 'Real-time data from Ornimetrics',
             style: TextStyle(
               fontSize: 16,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
