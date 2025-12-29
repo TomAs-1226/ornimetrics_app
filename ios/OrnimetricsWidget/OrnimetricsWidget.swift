@@ -99,56 +99,58 @@ struct MediumWidgetView: View {
     let entry: BirdEntry
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Left: Stats
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
                     Image(systemName: "bird.fill")
-                        .font(.title)
+                        .font(.title2)
                         .foregroundColor(.green)
-                    Text("Ornimetrics")
+                    Text("Birds")
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .lineLimit(1)
                 }
 
                 Spacer()
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("\(entry.data.totalDetections)")
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                        Text("detections")
-                            .font(.caption)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                        Text("detected")
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                     }
 
-                    HStack {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("\(entry.data.uniqueSpecies)")
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
                             .foregroundColor(.orange)
-                        Text("unique species")
-                            .font(.caption)
+                        Text("species")
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
             }
+            .frame(minWidth: 100)
 
             Divider()
 
             // Right: Recent activity
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Top Species")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundColor(.secondary)
 
                 Text(entry.data.topSpecies)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 Spacer()
 
-                Text("Last: \(entry.data.lastDetection)")
+                Text(entry.data.lastDetection)
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -169,21 +171,20 @@ struct LargeWidgetView: View {
             // Header
             HStack {
                 Image(systemName: "bird.fill")
-                    .font(.title)
-                    .foregroundColor(.green)
-                Text("Ornimetrics")
                     .font(.title2)
+                    .foregroundColor(.green)
+                Text("Bird Tracker")
+                    .font(.headline)
                     .fontWeight(.bold)
+                    .lineLimit(1)
                 Spacer()
-                VStack(alignment: .trailing) {
-                    Text("Live")
-                        .font(.caption2)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.2))
-                        .foregroundColor(.green)
-                        .clipShape(Capsule())
-                }
+                Text("Live")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.2))
+                    .foregroundColor(.green)
+                    .clipShape(Capsule())
             }
 
             Divider()

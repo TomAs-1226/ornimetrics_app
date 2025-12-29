@@ -26,6 +26,7 @@ import 'screens/environment_screen.dart';
 import 'screens/notification_center_screen.dart';
 import 'services/ai_provider.dart';
 import 'services/location_service.dart';
+import 'services/widget_service.dart';
 import 'services/community_storage_service.dart';
 import 'services/community_service.dart';
 import 'services/maintenance_rules_engine.dart';
@@ -860,6 +861,30 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     });
   }
 
+  /// Update iOS home screen widget with current data
+  void _updateWidget() {
+    if (_speciesDataMap.isEmpty) return;
+
+    // Find top species
+    final sortedSpecies = _speciesDataMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final topSpecies = sortedSpecies.isNotEmpty
+        ? sortedSpecies.first.key.replaceAll('_', ' ')
+        : '—';
+
+    // Last detection info
+    final lastDetection = sortedSpecies.length > 1
+        ? sortedSpecies[1].key.replaceAll('_', ' ')
+        : topSpecies;
+
+    WidgetService.instance.updateWidget(
+      totalDetections: _totalDetections,
+      uniqueSpecies: _speciesDataMap.length,
+      lastDetection: lastDetection,
+      topSpecies: topSpecies,
+    );
+  }
+
   List<TrendSignal> _sortedChangingTrends({int? limit}) {
     final changing = _trendSignals.where((s) => s.delta != 0).toList()
       ..sort((a, b) => b.changeRate.abs().compareTo(a.changeRate.abs()));
@@ -944,6 +969,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
             : '';
       });
       _rebuildTrendSignals();
+      _updateWidget();
     } catch (e) {
       if (!mounted) return;
       setState(() {
