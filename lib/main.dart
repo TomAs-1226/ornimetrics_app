@@ -5455,27 +5455,268 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   void _handleVersionTap() {
     final now = DateTime.now();
-    if (_lastTapTime != null && now.difference(_lastTapTime!) > const Duration(seconds: 2)) {
+    // Reset tap count if more than 1.5 seconds between taps (for rapid tap detection)
+    if (_lastTapTime != null && now.difference(_lastTapTime!) > const Duration(milliseconds: 1500)) {
+      // If this is a fresh tap after a delay, show the about dialog
+      if (_versionTapCount <= 1) {
+        _versionTapCount = 1;
+        _lastTapTime = now;
+        _showAboutDialog();
+        return;
+      }
       _versionTapCount = 0;
     }
     _lastTapTime = now;
     _versionTapCount++;
 
+    // First tap shows about dialog
+    if (_versionTapCount == 1) {
+      _showAboutDialog();
+      return;
+    }
+
+    // Multiple rapid taps unlock developer mode
     if (_versionTapCount >= 7 && !_easterEggUnlocked) {
       setState(() => _easterEggUnlocked = true);
       HapticFeedback.heavyImpact();
-      _showEasterEgg();
-    } else if (_versionTapCount >= 3 && _versionTapCount < 7) {
-      final remaining = 7 - _versionTapCount;
-      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$remaining taps to unlock the secret...'),
-          duration: const Duration(milliseconds: 800),
+          content: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Developer Mode unlocked! 🎉'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.purple,
         ),
       );
+    } else if (_versionTapCount >= 3 && _versionTapCount < 7 && !_easterEggUnlocked) {
+      // Subtle haptic feedback for progress (no intrusive snackbar)
+      HapticFeedback.lightImpact();
+      // Update subtitle to show progress
+      setState(() {});
     }
+  }
+
+  String get _versionSubtitle {
+    if (_easterEggUnlocked) return '1.2.0 ✨ Developer Mode';
+    // Show tap progress only during rapid tapping
+    if (_versionTapCount >= 3 && _versionTapCount < 7 &&
+        _lastTapTime != null &&
+        DateTime.now().difference(_lastTapTime!) < const Duration(milliseconds: 1500)) {
+      return '1.2.0 • ${7 - _versionTapCount} more...';
+    }
+    return '1.2.0';
+  }
+
+  void _showAboutDialog() {
+    final colorScheme = Theme.of(context).colorScheme;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'About Ornimetrics',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
+          child: FadeTransition(
+            opacity: anim1,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.9, end: 1.0).animate(
+                CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.88,
+            padding: const EdgeInsets.all(28.0),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Logo
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [colorScheme.primaryContainer, colorScheme.primary.withOpacity(0.2)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.flutter_dash, size: 48, color: colorScheme.primary),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Ornimetrics',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Version 1.2.0',
+                      style: TextStyle(
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Features list
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceVariant.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildFeatureRow(context, Icons.camera_alt, 'AI Bird Detection'),
+                        const SizedBox(height: 8),
+                        _buildFeatureRow(context, Icons.cloud, 'Weather Integration'),
+                        const SizedBox(height: 8),
+                        _buildFeatureRow(context, Icons.groups, 'Community Center'),
+                        const SizedBox(height: 8),
+                        _buildFeatureRow(context, Icons.notifications, 'Smart Alerts'),
+                        const SizedBox(height: 8),
+                        _buildFeatureRow(context, Icons.offline_bolt, 'Offline Support'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Info rows
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceVariant.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildInfoRow(context, Icons.code, 'Built with', 'Flutter & Firebase'),
+                        const Divider(height: 16),
+                        _buildInfoRow(context, Icons.person_outline, 'Developer', 'Baichen Yu'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // ToS and Close buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            _showTermsOfService();
+                          },
+                          child: const Text('Terms of Service'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Close'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureRow(BuildContext context, IconData icon, String text) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 12),
+        Text(text, style: const TextStyle(fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
+  void _showTermsOfService() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Terms of Service'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTosSection('1. Acceptance of Terms',
+                'By using Ornimetrics, you agree to these terms. The app is provided for personal, non-commercial bird watching and feeder monitoring.'),
+              _buildTosSection('2. Privacy & Data',
+                'We collect usage data to improve the app. Photos and detection data are stored securely. Location data is used only for weather integration and is not shared.'),
+              _buildTosSection('3. Community Guidelines',
+                'Be respectful in the Community Center. No spam, harassment, or inappropriate content. Violations may result in account suspension.'),
+              _buildTosSection('4. AI Analysis',
+                'AI-powered bird detection is provided as-is. Results may not always be accurate. Do not rely solely on AI for species identification.'),
+              _buildTosSection('5. Liability',
+                'Ornimetrics is provided without warranty. We are not liable for any damages arising from app use.'),
+              _buildTosSection('6. Changes',
+                'We may update these terms. Continued use after changes constitutes acceptance.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTosSection(String title, String content) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(content, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+        ],
+      ),
+    );
   }
 
   void _showEasterEgg() {
@@ -5732,8 +5973,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               _easterEggUnlocked ? Icons.auto_awesome : Icons.info_outline,
               color: _easterEggUnlocked ? Colors.amber : null,
             ),
-            title: const Text('App version'),
-            subtitle: Text(_easterEggUnlocked ? '1.2.0 ✨ Developer Mode' : '1.2.0'),
+            title: const Text('About'),
+            subtitle: Text(_versionSubtitle),
             trailing: _easterEggUnlocked
                 ? Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -5748,145 +5989,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   )
-                : null,
-            onTap: () {
-              _handleVersionTap();
-            },
-            onLongPress: () {
-              safeSelectionHaptic();
-              showGeneralDialog(
-                context: context,
-                barrierDismissible: true,
-                barrierLabel: 'About Ornimetrics',
-                barrierColor: Colors.black54,
-                transitionDuration: const Duration(milliseconds: 300),
-                transitionBuilder: (context, anim1, anim2, child) {
-                  return BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
-                    child: FadeTransition(
-                      opacity: anim1,
-                      child: ScaleTransition(
-                        scale: Tween<double>(begin: 0.9, end: 1.0).animate(
-                          CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
-                        ),
-                        child: child,
-                      ),
-                    ),
-                  );
-                },
-                pageBuilder: (context, anim1, anim2) {
-                  final colorScheme = Theme.of(context).colorScheme;
-                  return Center(
-                    child: Container(
-                      width: MediaQuery.of(context).size.width * 0.88,
-                      padding: const EdgeInsets.all(28.0),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Logo
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [colorScheme.primaryContainer, colorScheme.primary.withOpacity(0.2)],
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.flutter_dash, size: 48, color: colorScheme.primary),
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Ornimetrics',
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                'Version 1.2.0',
-                                style: TextStyle(
-                                  color: colorScheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Your intelligent wildlife tracking companion. Monitor bird detections, analyze biodiversity patterns, and connect with the birding community.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: colorScheme.onSurfaceVariant,
-                                height: 1.5,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            // Info cards
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                children: [
-                                  _buildInfoRow(context, Icons.code, 'Built with', 'Flutter & Firebase'),
-                                  const Divider(height: 16),
-                                  _buildInfoRow(context, Icons.person_outline, 'Developer', 'Baichen Yu'),
-                                  const Divider(height: 16),
-                                  _buildInfoRow(context, Icons.cloud_outlined, 'Data', 'Firebase RTDB + WeatherAPI'),
-                                  const Divider(height: 16),
-                                  _buildInfoRow(context, Icons.email_outlined, 'Contact', 'yu_thomas1226@outlook.com'),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  child: const Text('Close'),
-                                ),
-                                const SizedBox(width: 12),
-                                if (_easterEggUnlocked)
-                                  FilledButton.icon(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                      _showEasterEgg();
-                                    },
-                                    icon: const Icon(Icons.auto_awesome, size: 18),
-                                    label: const Text('Easter Egg'),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+                : const Icon(Icons.chevron_right),
+            onTap: _handleVersionTap,
           ),
           // Secret options - only visible when easter egg is unlocked
           if (_easterEggUnlocked) ...[
@@ -5982,18 +6086,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildInfoRow(BuildContext context, IconData icon, String label, String value) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: colorScheme.primary),
-        const SizedBox(width: 12),
-        Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant)),
-        const Spacer(),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
-      ],
-    );
-  }
 }
 
 // ─────────────────────────────────────────────
