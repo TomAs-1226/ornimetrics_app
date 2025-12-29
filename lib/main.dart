@@ -7495,6 +7495,7 @@ class ToolsScreen extends StatefulWidget {
 class _ToolsScreenState extends State<ToolsScreen> {
   List<Map<String, dynamic>> _manualDetections = [];
   bool _loadingDetections = true;
+  String? _currentUserEmail;
 
   @override
   void initState() {
@@ -7505,21 +7506,50 @@ class _ToolsScreenState extends State<ToolsScreen> {
   Future<void> _loadManualDetections() async {
     try {
       final db = primaryDatabase().ref();
-      final snap = await db.child('manual_detections').orderByChild('timestamp').limitToLast(20).get();
+      final user = FirebaseAuth.instance.currentUser;
 
       final List<Map<String, dynamic>> detections = [];
-      if (snap.exists && snap.value is Map) {
-        final m = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      // Fetch from user-specific field_detections (primary source)
+      if (user != null) {
+        _currentUserEmail = user.email;
+        final userSnap = await db.child('users/${user.uid}/field_detections').orderByChild('timestamp').limitToLast(50).get();
+
+        if (userSnap.exists && userSnap.value is Map) {
+          final m = Map<dynamic, dynamic>.from(userSnap.value as Map);
+          m.forEach((key, raw) {
+            if (raw is Map) {
+              detections.add({
+                'id': key,
+                'source': 'user_field',
+                ...Map<String, dynamic>.from(raw),
+              });
+            }
+          });
+        }
+      }
+
+      // Also fetch from legacy manual_detections for backwards compatibility
+      final legacySnap = await db.child('manual_detections').orderByChild('timestamp').limitToLast(20).get();
+      if (legacySnap.exists && legacySnap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(legacySnap.value as Map);
         m.forEach((key, raw) {
           if (raw is Map) {
-            detections.add({
-              'id': key,
-              ...Map<String, dynamic>.from(raw),
-            });
+            // Only add if not already added from user path (avoid duplicates)
+            final existingIds = detections.map((d) => d['id']).toSet();
+            if (!existingIds.contains(key)) {
+              detections.add({
+                'id': key,
+                'source': 'legacy',
+                ...Map<String, dynamic>.from(raw),
+              });
+            }
           }
         });
-        detections.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
       }
+
+      // Sort by timestamp descending
+      detections.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
 
       if (mounted) {
         setState(() {
@@ -7528,6 +7558,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Load manual detections error: $e');
       if (mounted) {
         setState(() => _loadingDetections = false);
       }
@@ -7673,9 +7704,77 @@ class _ToolsScreenState extends State<ToolsScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Manual Detections Section
-              _buildSectionTitle(colorScheme, Icons.camera_enhance, 'My Field Detections', 'Birds identified outside the feeder'),
-              const SizedBox(height: 12),
+              // My Field Detections Section
+              Row(
+                children: [
+                  Expanded(child: _buildSectionTitle(colorScheme, Icons.camera_enhance, 'My Field Detections', 'Birds you identified in the field')),
+                  IconButton(
+                    onPressed: () {
+                      setState(() => _loadingDetections = true);
+                      _loadManualDetections();
+                    },
+                    icon: Icon(Icons.refresh, color: colorScheme.primary),
+                    tooltip: 'Refresh',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Login status indicator
+              Builder(
+                builder: (context) {
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user == null) {
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Sign in to view and save your personal field detections',
+                              style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Showing detections for ${user.email ?? 'your account'}',
+                            style: TextStyle(fontSize: 11, color: Colors.green[700]),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '${_manualDetections.length} total',
+                          style: TextStyle(fontSize: 11, color: Colors.green[700], fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
               if (_loadingDetections)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (_manualDetections.isEmpty)
@@ -7686,9 +7785,13 @@ class _ToolsScreenState extends State<ToolsScreen> {
               if (_manualDetections.length > 5)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: OutlinedButton(
+                  child: FilledButton.icon(
                     onPressed: () => _showAllDetectionsSheet(context),
-                    child: Text('View all ${_manualDetections.length} detections'),
+                    icon: const Icon(Icons.visibility, size: 18),
+                    label: Text('View all ${_manualDetections.length} detections'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colorScheme.primary,
+                    ),
                   ),
                 ),
               const SizedBox(height: 32),
@@ -8088,66 +8191,325 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
   Widget _buildDetectionCard(ColorScheme colorScheme, Map<String, dynamic> detection) {
     final species = detection['species'] ?? 'Unknown Species';
+    final scientificName = detection['scientific_name'] ?? '';
     final confidence = (detection['confidence'] ?? 0.0) * 100;
     final timestamp = detection['timestamp'] is int
         ? DateTime.fromMillisecondsSinceEpoch(detection['timestamp'])
         : DateTime.now();
     final imageUrl = detection['image_url'] ?? '';
+    final userEmail = detection['user_email'] ?? '';
+    final location = detection['location'] as Map<dynamic, dynamic>?;
+    final weather = detection['weather'] as Map<dynamic, dynamic>?;
+    final aiAnalysis = detection['ai_analysis'] as String?;
+    final source = detection['source'] ?? 'field';
 
+    return GestureDetector(
+      onTap: () => _showDetectionDetailSheet(context, detection),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(16)),
+                  child: SizedBox(
+                    width: 90,
+                    height: 90,
+                    child: imageUrl.isNotEmpty
+                        ? _buildImageWidget(imageUrl, fit: BoxFit.cover)
+                        : Container(
+                            color: colorScheme.primaryContainer.withOpacity(0.5),
+                            child: Icon(Icons.photo_camera, color: colorScheme.primary.withOpacity(0.5), size: 32),
+                          ),
+                  ),
+                ),
+                // Main Info
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(species, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        if (scientificName.isNotEmpty)
+                          Text(scientificName, style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.verified, size: 14, color: Colors.green),
+                            const SizedBox(width: 4),
+                            Text('${confidence.toStringAsFixed(0)}%', style: TextStyle(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.w600)),
+                            const SizedBox(width: 12),
+                            Icon(Icons.access_time, size: 12, color: colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Text(DateFormat('MMM d, h:mm a').format(timestamp), style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Badge
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: source == 'user_field' ? Colors.green.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      source == 'user_field' ? 'My' : 'Field',
+                      style: TextStyle(fontSize: 10, color: source == 'user_field' ? Colors.green : Colors.blue, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Additional Data Row
+            if (location != null || weather != null || userEmail.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (userEmail.isNotEmpty)
+                      _buildDataChip(colorScheme, Icons.person, userEmail.split('@').first),
+                    if (location != null)
+                      _buildDataChip(colorScheme, Icons.location_on, 'GPS'),
+                    if (weather != null)
+                      _buildDataChip(colorScheme, Icons.cloud, weather['condition']?.toString() ?? 'Weather'),
+                    if (aiAnalysis != null && aiAnalysis.isNotEmpty)
+                      _buildDataChip(colorScheme, Icons.psychology, 'AI Analysis'),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDataChip(ColorScheme colorScheme, IconData icon, String label) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceVariant.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+        color: colorScheme.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-            child: SizedBox(
-              width: 80,
-              height: 80,
-              child: imageUrl.isNotEmpty
-                  ? _buildImageWidget(imageUrl, fit: BoxFit.cover)
-                  : Container(
-                      color: colorScheme.primaryContainer.withOpacity(0.5),
-                      child: Icon(Icons.photo, color: colorScheme.primary.withOpacity(0.5)),
-                    ),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(species, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.verified, size: 14, color: Colors.green),
-                      const SizedBox(width: 4),
-                      Text('${confidence.toStringAsFixed(0)}% confidence', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
-                    ],
+          Icon(icon, size: 12, color: colorScheme.primary),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 10, color: colorScheme.primary)),
+        ],
+      ),
+    );
+  }
+
+  void _showDetectionDetailSheet(BuildContext context, Map<String, dynamic> detection) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final species = detection['species'] ?? 'Unknown Species';
+    final scientificName = detection['scientific_name'] ?? '';
+    final confidence = (detection['confidence'] ?? 0.0) * 100;
+    final timestamp = detection['timestamp'] is int
+        ? DateTime.fromMillisecondsSinceEpoch(detection['timestamp'])
+        : DateTime.now();
+    final imageUrl = detection['image_url'] ?? '';
+    final userEmail = detection['user_email'] ?? '';
+    final location = detection['location'] as Map<dynamic, dynamic>?;
+    final weather = detection['weather'] as Map<dynamic, dynamic>?;
+    final aiAnalysis = detection['ai_analysis'] as String?;
+    final timeOfDay = detection['time_of_day'] ?? '';
+    final date = detection['date'] ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => SingleChildScrollView(
+          controller: controller,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(height: 2),
-                  Text(DateFormat('MMM d, h:mm a').format(timestamp), style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Header
+              Row(
+                children: [
+                  Icon(Icons.visibility, color: colorScheme.primary),
+                  const SizedBox(width: 12),
+                  const Text('Field Detection Details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 ],
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 20),
+
+              // Image
+              if (imageUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _buildImageWidget(imageUrl, fit: BoxFit.cover),
+                  ),
+                ),
+              const SizedBox(height: 20),
+
+              // Species Info
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [Colors.green.withOpacity(0.1), Colors.teal.withOpacity(0.1)]),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(species, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    if (scientificName.isNotEmpty)
+                      Text(scientificName, style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic, color: colorScheme.onSurfaceVariant)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(20)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.verified, size: 16, color: Colors.white),
+                              const SizedBox(width: 6),
+                              Text('${confidence.toStringAsFixed(1)}% Confidence', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Text('Field', style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.w600)),
-            ),
+              const SizedBox(height: 16),
+
+              // Date & Time
+              _buildDetailSection(colorScheme, Icons.calendar_today, 'Date & Time', [
+                _buildDetailRow('Date', date.isNotEmpty ? date : DateFormat('yyyy-MM-dd').format(timestamp)),
+                _buildDetailRow('Time', timeOfDay.isNotEmpty ? timeOfDay : DateFormat('h:mm a').format(timestamp)),
+                _buildDetailRow('Recorded', DateFormat('MMM d, yyyy at h:mm a').format(timestamp)),
+              ]),
+
+              // User Info
+              if (userEmail.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _buildDetailSection(colorScheme, Icons.person, 'Observer', [
+                  _buildDetailRow('Email', userEmail),
+                ]),
+              ],
+
+              // Location
+              if (location != null) ...[
+                const SizedBox(height: 16),
+                _buildDetailSection(colorScheme, Icons.location_on, 'Location', [
+                  _buildDetailRow('Latitude', location['latitude']?.toString() ?? 'N/A'),
+                  _buildDetailRow('Longitude', location['longitude']?.toString() ?? 'N/A'),
+                  if (location['accuracy'] != null)
+                    _buildDetailRow('Accuracy', '${location['accuracy']}m'),
+                ]),
+              ],
+
+              // Weather
+              if (weather != null) ...[
+                const SizedBox(height: 16),
+                _buildDetailSection(colorScheme, Icons.cloud, 'Weather Conditions', [
+                  if (weather['condition'] != null) _buildDetailRow('Condition', weather['condition'].toString()),
+                  if (weather['temperature'] != null) _buildDetailRow('Temperature', '${weather['temperature']}°'),
+                  if (weather['humidity'] != null) _buildDetailRow('Humidity', '${weather['humidity']}%'),
+                  if (weather['wind_speed'] != null) _buildDetailRow('Wind', '${weather['wind_speed']} mph'),
+                ]),
+              ],
+
+              // AI Analysis
+              if (aiAnalysis != null && aiAnalysis.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _buildDetailSection(colorScheme, Icons.psychology, 'AI Species Analysis', []),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceVariant.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(aiAnalysis, style: TextStyle(fontSize: 13, color: colorScheme.onSurface, height: 1.5)),
+                ),
+              ],
+
+              const SizedBox(height: 32),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailSection(ColorScheme colorScheme, IconData icon, String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(children: children),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13)),
+          Flexible(child: Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), textAlign: TextAlign.end)),
         ],
       ),
     );
