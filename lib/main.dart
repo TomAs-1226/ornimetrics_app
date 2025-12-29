@@ -921,9 +921,9 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
       // Calculate overall weekly trend
       final totalDelta = _trendSignals.fold<int>(0, (a, b) => a + b.delta);
-      final totalPrevious = _trendSignals.fold<int>(0, (a, b) => a + b.previous);
-      if (totalPrevious > 0) {
-        weeklyTrend = (totalDelta / totalPrevious) * 100;
+      final totalStart = _trendSignals.fold<int>(0, (a, b) => a + b.start);
+      if (totalStart > 0) {
+        weeklyTrend = (totalDelta / totalStart) * 100;
       }
     }
 
