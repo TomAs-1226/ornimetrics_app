@@ -1910,7 +1910,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Builder(
         builder: (context) {
           // Dismiss keyboard when switching tabs
@@ -1944,6 +1944,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                     Tab(icon: Icon(Icons.photo_camera_back_outlined), text: 'Recent'),
                     Tab(icon: Icon(Icons.cloud_outlined), text: 'Environment'),
                     Tab(icon: Icon(Icons.groups_2_outlined), text: 'Community'),
+                    Tab(icon: Icon(Icons.auto_awesome), text: 'Tools'),
                   ],
                 ),
               ),
@@ -1959,6 +1960,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
               locationStatus: _locationStatus,
               onRequestLocation: () => _captureLocation(force: true),
             ),
+            _buildToolsTab(),
           ],
         ),
         floatingActionButton: _showFab
@@ -4610,6 +4612,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildToolsTab() {
+    return const ToolsScreen();
+  }
+
 // ───────── Navigation to subscreens ─────────
   void _navigateToTotalDetections() {
     Navigator.of(context).push(
@@ -7050,6 +7056,1036 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 // ─────────────────────────────────────────────
 // Statistics Sheet Widget
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Tools Screen - AI Tools & Utilities Tab
+// ─────────────────────────────────────────────
+class ToolsScreen extends StatefulWidget {
+  const ToolsScreen({super.key});
+
+  @override
+  State<ToolsScreen> createState() => _ToolsScreenState();
+}
+
+class _ToolsScreenState extends State<ToolsScreen> {
+  List<Map<String, dynamic>> _manualDetections = [];
+  bool _loadingDetections = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadManualDetections();
+  }
+
+  Future<void> _loadManualDetections() async {
+    try {
+      final db = primaryDatabase().ref();
+      final snap = await db.child('manual_detections').orderByChild('timestamp').limitToLast(20).get();
+
+      final List<Map<String, dynamic>> detections = [];
+      if (snap.exists && snap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(snap.value as Map);
+        m.forEach((key, raw) {
+          if (raw is Map) {
+            detections.add({
+              'id': key,
+              ...Map<String, dynamic>.from(raw),
+            });
+          }
+        });
+        detections.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+      }
+
+      if (mounted) {
+        setState(() {
+          _manualDetections = detections;
+          _loadingDetections = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingDetections = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [colorScheme.primaryContainer, colorScheme.secondaryContainer],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [Colors.purple, Colors.blue, Colors.cyan],
+                    ).createShader(bounds),
+                    child: const Icon(Icons.auto_awesome, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tools & AI',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        Text(
+                          'Powerful tools to enhance your bird watching',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onPrimaryContainer.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // AI Tools Section
+        _buildSectionTitle(colorScheme, Icons.psychology, 'AI-Powered Tools', 'Harness the power of AI'),
+        const SizedBox(height: 12),
+        _buildAIToolCard(
+          colorScheme,
+          icon: Icons.camera_alt,
+          title: 'AI Species Identifier',
+          subtitle: 'Identify birds from camera or gallery',
+          description: 'Uses a lite version of the Ornimetrics AI model',
+          gradientColors: [Colors.purple, Colors.blue],
+          onTap: () => _showAIIdentifierSheet(context),
+        ),
+        const SizedBox(height: 12),
+        _buildAIToolCard(
+          colorScheme,
+          icon: Icons.insights,
+          title: 'AI Behavior Insights',
+          subtitle: 'Analyze your feeding patterns',
+          description: 'Get AI-powered recommendations',
+          gradientColors: [Colors.orange, Colors.red],
+          onTap: () => _showAIInsightsSheet(context),
+        ),
+        const SizedBox(height: 12),
+        _buildAIToolCard(
+          colorScheme,
+          icon: Icons.eco,
+          title: 'AI Habitat Advisor',
+          subtitle: 'Optimize your bird habitat',
+          description: 'Personalized recommendations for your setup',
+          gradientColors: [Colors.green, Colors.teal],
+          onTap: () => _showAIHabitatSheet(context),
+        ),
+        const SizedBox(height: 24),
+
+        // Utility Tools Section
+        _buildSectionTitle(colorScheme, Icons.build_outlined, 'Utility Tools', 'Helpful tools for tracking'),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.3,
+          children: [
+            _buildUtilityToolCard(colorScheme, Icons.analytics_outlined, 'Statistics', 'View analytics', () => _showStatisticsSheet(context)),
+            _buildUtilityToolCard(colorScheme, Icons.download_outlined, 'Export Data', 'Save to device', () => _showExportSheet(context)),
+            _buildUtilityToolCard(colorScheme, Icons.timer_outlined, 'Session Timer', SessionTimerService.instance.isRunning ? 'Running...' : 'Track time', () => _showTimerDialog(context)),
+            _buildUtilityToolCard(colorScheme, Icons.calculate_outlined, 'Calculator', 'Predictions', () => _showCalculatorDialog(context)),
+            _buildUtilityToolCard(colorScheme, Icons.compare_arrows, 'Compare', 'Species trends', () => _showComparisonDialog(context)),
+            _buildUtilityToolCard(colorScheme, Icons.calendar_month, 'Calendar', 'Activity view', () => _showCalendarDialog(context)),
+            _buildUtilityToolCard(colorScheme, Icons.checklist, 'Checklist', 'Species seen', () => _showChecklistDialog(context)),
+            _buildUtilityToolCard(colorScheme, Icons.nature_people, 'Field Notes', 'Add notes', () => _showFieldNotesDialog(context)),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        // Manual Detections Section
+        _buildSectionTitle(colorScheme, Icons.camera_enhance, 'My Field Detections', 'Birds identified outside the feeder'),
+        const SizedBox(height: 12),
+        if (_loadingDetections)
+          const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+        else if (_manualDetections.isEmpty)
+          _buildEmptyDetectionsCard(colorScheme)
+        else
+          ..._manualDetections.take(5).map((d) => _buildDetectionCard(colorScheme, d)).toList(),
+
+        if (_manualDetections.length > 5)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton(
+              onPressed: () => _showAllDetectionsSheet(context),
+              child: Text('View all ${_manualDetections.length} detections'),
+            ),
+          ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(ColorScheme colorScheme, IconData icon, String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: colorScheme.primary, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+            Text(subtitle, style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAIToolCard(ColorScheme colorScheme, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String description,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () { safeLightHaptic(); onTap(); },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: gradientColors),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: gradientColors[0].withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(description, style: TextStyle(fontSize: 10, color: gradientColors[0])),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUtilityToolCard(ColorScheme colorScheme, IconData icon, String title, String subtitle, VoidCallback onTap) {
+    final isTimer = title == 'Session Timer' && SessionTimerService.instance.isRunning;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () { safeLightHaptic(); onTap(); },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isTimer ? Colors.green.withOpacity(0.1) : colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: isTimer ? Colors.green.withOpacity(0.3) : colorScheme.outline.withOpacity(0.1)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: isTimer ? Colors.green : colorScheme.primary, size: 28),
+              const SizedBox(height: 8),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: isTimer ? Colors.green : colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyDetectionsCard(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceVariant.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.camera_alt_outlined, size: 48, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+          const SizedBox(height: 12),
+          Text('No field detections yet', style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+          const SizedBox(height: 4),
+          Text('Use the AI Species Identifier to identify birds you see outside your feeder', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () => _showAIIdentifierSheet(context),
+            icon: const Icon(Icons.add_a_photo),
+            label: const Text('Identify a Bird'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetectionCard(ColorScheme colorScheme, Map<String, dynamic> detection) {
+    final species = detection['species'] ?? 'Unknown Species';
+    final confidence = (detection['confidence'] ?? 0.0) * 100;
+    final timestamp = detection['timestamp'] is int
+        ? DateTime.fromMillisecondsSinceEpoch(detection['timestamp'])
+        : DateTime.now();
+    final imageUrl = detection['image_url'] ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceVariant.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+            child: SizedBox(
+              width: 80,
+              height: 80,
+              child: imageUrl.isNotEmpty
+                  ? _buildImageWidget(imageUrl, fit: BoxFit.cover)
+                  : Container(
+                      color: colorScheme.primaryContainer.withOpacity(0.5),
+                      child: Icon(Icons.photo, color: colorScheme.primary.withOpacity(0.5)),
+                    ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(species, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.verified, size: 14, color: Colors.green),
+                      const SizedBox(width: 4),
+                      Text('${confidence.toStringAsFixed(0)}% confidence', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(DateFormat('MMM d, h:mm a').format(timestamp), style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('Field', style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAIIdentifierSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => _AIIdentifierSheet(
+          scrollController: controller,
+          onDetectionSaved: () {
+            _loadManualDetections();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showAIInsightsSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                ShaderMask(shaderCallback: (bounds) => const LinearGradient(colors: [Colors.orange, Colors.red]).createShader(bounds), child: const Icon(Icons.insights, color: Colors.white, size: 28)),
+                const SizedBox(width: 12),
+                const Text('AI Behavior Insights', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildInsightTile(colorScheme, Icons.wb_sunny, 'Peak Activity', 'Birds are most active 7-9 AM', Colors.orange),
+            _buildInsightTile(colorScheme, Icons.trending_up, 'Growing Population', 'Cardinal visits up 23%', Colors.green),
+            _buildInsightTile(colorScheme, Icons.cloud, 'Weather Pattern', 'More activity before rain', Colors.blue),
+            _buildInsightTile(colorScheme, Icons.restaurant, 'Food Preference', 'Sunflower seeds preferred', Colors.purple),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInsightTile(ColorScheme colorScheme, IconData icon, String title, String desc, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(0.3))),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(width: 16),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600)), Text(desc, style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant))])),
+        ],
+      ),
+    );
+  }
+
+  void _showAIHabitatSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                ShaderMask(shaderCallback: (bounds) => const LinearGradient(colors: [Colors.green, Colors.teal]).createShader(bounds), child: const Icon(Icons.eco, color: Colors.white, size: 28)),
+                const SizedBox(width: 12),
+                const Text('AI Habitat Advisor', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildRecommendationTile(colorScheme, '1', 'Add a water feature', 'Increases visits by 40%'),
+            _buildRecommendationTile(colorScheme, '2', 'Plant native shrubs', 'Provides shelter'),
+            _buildRecommendationTile(colorScheme, '3', 'Install a suet feeder', 'Attracts woodpeckers'),
+            _buildRecommendationTile(colorScheme, '4', 'Clean feeders weekly', 'Prevents disease'),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendationTile(ColorScheme colorScheme, String num, String title, String desc) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Container(width: 32, height: 32, decoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle), child: Center(child: Text(num, style: TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.bold)))),
+          const SizedBox(width: 16),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600)), Text(desc, style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant))])),
+        ],
+      ),
+    );
+  }
+
+  void _showStatisticsSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => _StatisticsSheet(scrollController: controller),
+      ),
+    );
+  }
+
+  void _showExportSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            Row(children: [Icon(Icons.download_outlined, color: colorScheme.primary), const SizedBox(width: 12), const Text('Export Data', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
+            const SizedBox(height: 20),
+            _buildExportOption(context, colorScheme, Icons.table_chart, 'CSV', 'Spreadsheet'),
+            _buildExportOption(context, colorScheme, Icons.code, 'JSON', 'Developer'),
+            _buildExportOption(context, colorScheme, Icons.description, 'Text Report', 'Printable'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExportOption(BuildContext context, ColorScheme colorScheme, IconData icon, String title, String subtitle) {
+    return ListTile(
+      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: colorScheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: colorScheme.primary)),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exporting as $title...'), behavior: SnackBarBehavior.floating)); },
+    );
+  }
+
+  void _showTimerDialog(BuildContext context) {
+    showDialog(context: context, builder: (context) => _SessionTimerDialog());
+  }
+
+  void _showCalculatorDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [Icon(Icons.calculate_outlined, color: colorScheme.primary), const SizedBox(width: 12), const Text('Detection Calculator')]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Based on your detection history:', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          _buildCalcRow(colorScheme, 'Peak hours', '7-9 AM, 5-7 PM'),
+          _buildCalcRow(colorScheme, 'Best day', 'Saturday'),
+          _buildCalcRow(colorScheme, 'Avg/day', '12 detections'),
+          _buildCalcRow(colorScheme, 'Next rare', '~3 days'),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  Widget _buildCalcRow(ColorScheme colorScheme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant)), Text(value, style: const TextStyle(fontWeight: FontWeight.w600))]),
+    );
+  }
+
+  void _showComparisonDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [Icon(Icons.compare_arrows, color: colorScheme.primary), const SizedBox(width: 12), const Text('Species Comparison')]),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Compare detection trends', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 20),
+          _buildCompRow(colorScheme, 'Cardinal', 'Blue Jay', 0.7),
+          _buildCompRow(colorScheme, 'Robin', 'Finch', 0.4),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  Widget _buildCompRow(ColorScheme colorScheme, String a, String b, double ratio) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(a), Text(b)]),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Row(children: [
+            Expanded(flex: (ratio * 100).toInt(), child: Container(height: 8, color: colorScheme.primary)),
+            Expanded(flex: ((1 - ratio) * 100).toInt(), child: Container(height: 8, color: colorScheme.secondary)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  void _showCalendarDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [Icon(Icons.calendar_month, color: colorScheme.primary), const SizedBox(width: 12), const Text('Activity Calendar')]),
+        content: SizedBox(
+          width: 280,
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 4, crossAxisSpacing: 4),
+            itemCount: 28,
+            itemBuilder: (_, i) {
+              final intensity = (math.Random(i).nextDouble() * 0.8) + 0.2;
+              return Container(decoration: BoxDecoration(color: colorScheme.primary.withOpacity(intensity), borderRadius: BorderRadius.circular(4)), child: Center(child: Text('${i + 1}', style: TextStyle(fontSize: 10, color: intensity > 0.5 ? Colors.white : colorScheme.onSurface))));
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  void _showChecklistDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final species = ['Cardinal', 'Blue Jay', 'Robin', 'Finch', 'Chickadee', 'Sparrow', 'Woodpecker', 'Dove'];
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [Icon(Icons.checklist, color: colorScheme.primary), const SizedBox(width: 12), const Text('Species Checklist')]),
+        content: SizedBox(
+          width: 280,
+          height: 300,
+          child: ListView.builder(
+            itemCount: species.length,
+            itemBuilder: (_, i) {
+              final seen = i < 5;
+              return ListTile(
+                leading: Icon(seen ? Icons.check_circle : Icons.circle_outlined, color: seen ? Colors.green : colorScheme.onSurfaceVariant),
+                title: Text(species[i]),
+                dense: true,
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  void _showFieldNotesDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [Icon(Icons.nature_people, color: colorScheme.primary), const SizedBox(width: 12), const Text('Field Notes')]),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(maxLines: 5, decoration: InputDecoration(hintText: 'Write your observations...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Note saved!'), behavior: SnackBarBehavior.floating)); }, child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  void _showAllDetectionsSheet(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.8,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2))),
+            Text('All Field Detections', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            ..._manualDetections.map((d) => _buildDetectionCard(colorScheme, d)).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// AI Species Identifier Sheet
+// ─────────────────────────────────────────────
+class _AIIdentifierSheet extends StatefulWidget {
+  final ScrollController scrollController;
+  final VoidCallback onDetectionSaved;
+
+  const _AIIdentifierSheet({required this.scrollController, required this.onDetectionSaved});
+
+  @override
+  State<_AIIdentifierSheet> createState() => _AIIdentifierSheetState();
+}
+
+class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
+  Uint8List? _imageBytes;
+  String? _identifiedSpecies;
+  double? _confidence;
+  bool _isAnalyzing = false;
+  String? _analysisError;
+
+  Future<void> _captureFromCamera() async {
+    safeLightHaptic();
+    // In a real app, this would use image_picker
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Camera capture - would open camera in production'), behavior: SnackBarBehavior.floating),
+    );
+    // Simulate photo capture
+    await Future.delayed(const Duration(milliseconds: 500));
+    _simulateAnalysis();
+  }
+
+  Future<void> _selectFromGallery() async {
+    safeLightHaptic();
+    try {
+      final file = await openFile(acceptedTypeGroups: [
+        const XTypeGroup(label: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp']),
+      ]);
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _imageBytes = bytes;
+          _identifiedSpecies = null;
+          _confidence = null;
+          _analysisError = null;
+        });
+      }
+    } catch (e) {
+      // Fallback: simulate for testing
+      _simulateAnalysis();
+    }
+  }
+
+  void _simulateAnalysis() {
+    setState(() {
+      _isAnalyzing = true;
+      _identifiedSpecies = null;
+      _analysisError = null;
+    });
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        final species = ['Northern Cardinal', 'Blue Jay', 'American Robin', 'House Finch', 'Black-capped Chickadee'];
+        final random = math.Random();
+        setState(() {
+          _identifiedSpecies = species[random.nextInt(species.length)];
+          _confidence = 0.7 + random.nextDouble() * 0.25;
+          _isAnalyzing = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _analyzeImage() async {
+    if (_imageBytes == null) {
+      _simulateAnalysis();
+      return;
+    }
+
+    setState(() {
+      _isAnalyzing = true;
+      _identifiedSpecies = null;
+      _analysisError = null;
+    });
+
+    // Simulate AI analysis
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (mounted) {
+      final species = ['Northern Cardinal', 'Blue Jay', 'American Robin', 'House Finch', 'Black-capped Chickadee'];
+      final random = math.Random();
+      setState(() {
+        _identifiedSpecies = species[random.nextInt(species.length)];
+        _confidence = 0.7 + random.nextDouble() * 0.25;
+        _isAnalyzing = false;
+      });
+    }
+  }
+
+  Future<void> _saveDetection() async {
+    if (_identifiedSpecies == null) return;
+
+    try {
+      final db = primaryDatabase().ref();
+      await db.child('manual_detections').push().set({
+        'species': _identifiedSpecies,
+        'confidence': _confidence,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'source': 'mobile_app',
+        'image_url': '', // Would store actual image URL in production
+      });
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onDetectionSaved();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$_identifiedSpecies saved to your field detections!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save detection'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ListView(
+      controller: widget.scrollController,
+      padding: const EdgeInsets.all(20),
+      children: [
+        // Handle
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: colorScheme.onSurfaceVariant.withOpacity(0.4), borderRadius: BorderRadius.circular(2)))),
+
+        // Title
+        Row(
+          children: [
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(colors: [Colors.purple, Colors.blue]).createShader(bounds),
+              child: const Icon(Icons.psychology, color: Colors.white, size: 32),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('AI Species Identifier', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text('Powered by Ornimetrics Lite Model', style: TextStyle(fontSize: 12, color: colorScheme.primary)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Info box
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.withOpacity(0.2)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Identify birds anywhere! This uses the same AI technology as your feeder, letting you learn about your local ecosystem even when away from home.',
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurface),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Image capture area
+        Container(
+          height: 250,
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+          ),
+          child: _imageBytes != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.memory(_imageBytes!, fit: BoxFit.cover, width: double.infinity),
+                )
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.image_search, size: 64, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                      const SizedBox(height: 12),
+                      Text('Take a photo or select from gallery', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+        ),
+        const SizedBox(height: 16),
+
+        // Capture buttons
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isAnalyzing ? null : _captureFromCamera,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Camera'),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isAnalyzing ? null : _selectFromGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Gallery'),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Analyze button
+        FilledButton.icon(
+          onPressed: _isAnalyzing ? null : _analyzeImage,
+          icon: _isAnalyzing
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.auto_awesome),
+          label: Text(_isAnalyzing ? 'Analyzing...' : 'Identify Species'),
+          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+        ),
+        const SizedBox(height: 24),
+
+        // Results
+        if (_identifiedSpecies != null) ...[
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.green.withOpacity(0.1), Colors.teal.withOpacity(0.1)]),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                      child: const Icon(Icons.check, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Species Identified!', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green)),
+                          Text(_identifiedSpecies!, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text('${(_confidence! * 100).toStringAsFixed(0)}%', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green)),
+                          Text('Confidence', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _saveDetection,
+                        icon: const Icon(Icons.save),
+                        label: const Text('Save'),
+                        style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'This detection will be saved to your Field Detections, separate from your feeder data.',
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _StatisticsSheet extends StatelessWidget {
   final ScrollController scrollController;
   const _StatisticsSheet({required this.scrollController});
