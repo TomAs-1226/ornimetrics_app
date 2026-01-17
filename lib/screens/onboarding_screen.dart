@@ -759,20 +759,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Color picker with larger grid
-          Text(
-            'Accent Color',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 4),
+          _buildSectionHeader(colorScheme, 'Accent Color'),
+          const SizedBox(height: 6),
           Text(
             'Choose a color that represents you',
             style: TextStyle(
               fontSize: 14,
-              color: colorScheme.onSurfaceVariant,
+              color: colorScheme.onSurface.withOpacity(0.7),
             ),
           ),
           const SizedBox(height: 16),
@@ -862,6 +855,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             onChanged: (v) {
               _haptic();
               setState(() => _photoGridColumns = v.round());
+              photoGridColumnsNotifier.value = v.round(); // Apply immediately for live preview
             },
           ),
         ],
@@ -1036,6 +1030,31 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
+  Widget _buildSectionHeader(ColorScheme colorScheme, String text, {bool small = false}) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: small ? 16 : 20,
+          decoration: BoxDecoration(
+            color: colorScheme.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: small ? 14 : 16,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSettingsPage(ColorScheme colorScheme) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -1093,14 +1112,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Temperature unit
-          Text(
-            'Units',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Units'),
           const SizedBox(height: 12),
           _buildSegmentedControl(
             colorScheme: colorScheme,
@@ -1145,14 +1157,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Display options section
-          Text(
-            'Display Options',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Display Options'),
           const SizedBox(height: 12),
 
           // Compact mode
@@ -1199,14 +1204,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Sort order
-          Text(
-            'Default Sort Order',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Default Sort Order'),
           const SizedBox(height: 12),
           _buildSegmentedControl(
             colorScheme: colorScheme,
@@ -1221,14 +1219,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Distance unit
-          Text(
-            'Distance Unit',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Distance Unit'),
           const SizedBox(height: 12),
           _buildSegmentedControl(
             colorScheme: colorScheme,
@@ -1244,14 +1235,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 24),
 
           // Default tab
-          Text(
-            'Default Home Tab',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Default Home Tab'),
           const SizedBox(height: 12),
           _buildTabSelector(colorScheme),
 
@@ -1317,14 +1301,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 12),
 
           // Display mode
-          Text(
-            'Notification Style',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Notification Style', small: true),
           const SizedBox(height: 8),
           _buildDisplayModeSelector(colorScheme),
           const SizedBox(height: 16),
@@ -1360,14 +1337,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 16),
 
           // Notification types
-          Text(
-            'Show Notifications For',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
-            ),
-          ),
+          _buildSectionHeader(colorScheme, 'Show Notifications For', small: true),
           const SizedBox(height: 8),
           _buildNotificationTypeChips(colorScheme),
         ],
@@ -1789,9 +1759,23 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     _nextPage();
                   }
                 },
-                child: Text(
-                  'Skip for now',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: colorScheme.outline,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Skip for now',
+                      style: TextStyle(
+                        color: colorScheme.onSurface.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2043,7 +2027,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         const SizedBox(width: 12),
         Text(
           label,
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
+          style: TextStyle(
+            color: colorScheme.onSurface.withOpacity(0.7),
+          ),
         ),
         const Spacer(),
         Text(

@@ -2667,51 +2667,56 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
 
     return RefreshIndicator(
       onRefresh: _refreshAll,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: GridView.builder(
-          key: ValueKey(_photos.length),
-          controller: _recentScrollController,
-          padding: const EdgeInsets.all(12),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1,
-          ),
-          itemCount: _photos.length,
-          itemBuilder: (_, i) {
-            final p = _photos[i];
-            return _PhotoTile(
-              photo: p,
-              onTap: () {
-                safeLightHaptic();
-                Navigator.of(context).push(
-                  PageRouteBuilder(
-                    opaque: false,
-                    barrierColor: Colors.black87,
-                    transitionDuration: const Duration(milliseconds: 350),
-                    reverseTransitionDuration: const Duration(milliseconds: 300),
-                    pageBuilder: (_, __, ___) => RecentPhotoViewer(
-                      photos: _photos,
-                      initialIndex: i,
-                    ),
-                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                      return FadeTransition(
-                        opacity: CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeOut,
-                          reverseCurve: Curves.easeIn,
+      child: ValueListenableBuilder<int>(
+        valueListenable: photoGridColumnsNotifier,
+        builder: (context, columns, _) {
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: GridView.builder(
+              key: ValueKey('${_photos.length}_$columns'),
+              controller: _recentScrollController,
+              padding: const EdgeInsets.all(12),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1,
+              ),
+              itemCount: _photos.length,
+              itemBuilder: (_, i) {
+                final p = _photos[i];
+                return _PhotoTile(
+                  photo: p,
+                  onTap: () {
+                    safeLightHaptic();
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        opaque: false,
+                        barrierColor: Colors.black87,
+                        transitionDuration: const Duration(milliseconds: 350),
+                        reverseTransitionDuration: const Duration(milliseconds: 300),
+                        pageBuilder: (_, __, ___) => RecentPhotoViewer(
+                          photos: _photos,
+                          initialIndex: i,
                         ),
-                        child: child,
-                      );
-                    },
-                  ),
+                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                          return FadeTransition(
+                            opacity: CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOut,
+                              reverseCurve: Curves.easeIn,
+                            ),
+                            child: child,
+                          );
+                        },
+                      ),
+                    );
+                  },
                 );
               },
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
