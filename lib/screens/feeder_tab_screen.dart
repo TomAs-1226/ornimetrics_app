@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/feeder_models.dart';
 import '../services/feeder_api_service.dart';
 import '../services/feeder_bluetooth_service.dart';
@@ -28,8 +29,12 @@ class _FeederTabScreenState extends State<FeederTabScreen>
   final _firebaseService = FeederFirebaseService.instance;
 
   late AnimationController _refreshAnimController;
+  late AnimationController _pulseAnimController;
+  late AnimationController _hardwareAnimController;
   bool _isRefreshing = false;
   bool _initialLoadDone = false;
+  bool _accountSkipped = false;
+  bool _hasLoggedInUser = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -41,7 +46,25 @@ class _FeederTabScreenState extends State<FeederTabScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
+    _pulseAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _hardwareAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _checkAccountStatus();
     _loadPairedDevice();
+  }
+
+  Future<void> _checkAccountStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final user = FirebaseAuth.instance.currentUser;
+    setState(() {
+      _accountSkipped = prefs.getBool('account_skipped') ?? false;
+      _hasLoggedInUser = user != null;
+    });
   }
 
   Future<void> _loadPairedDevice() async {
@@ -78,6 +101,14 @@ class _FeederTabScreenState extends State<FeederTabScreen>
 
   Future<void> _addNewFeeder() async {
     HapticFeedback.selectionClick();
+
+    // Check if user has logged in - required for feeder OOBE
+    if (!_hasLoggedInUser) {
+      final shouldLogin = await _showAccountRequiredDialog();
+      if (!shouldLogin) return;
+      return; // User needs to login first
+    }
+
     final result = await Navigator.of(context).push<PairedFeeder>(
       MaterialPageRoute(builder: (_) => const FeederSetupScreen()),
     );
@@ -88,10 +119,115 @@ class _FeederTabScreenState extends State<FeederTabScreen>
         _firebaseService.initialize(userId: user.uid, deviceId: result.deviceId);
         _firebaseService.startListening();
         _apiService.startPolling();
+        _hardwareAnimController.forward();
       }
       setState(() {});
       _refreshData();
     }
+  }
+
+  Future<bool> _showAccountRequiredDialog() async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.account_circle,
+            size: 40,
+            color: colorScheme.primary,
+          ),
+        ),
+        title: const Text('Account Required'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'To set up your Ornimetrics OS feeder, you need to sign in to your account first.',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  _buildAccountRequiredItem(
+                    colorScheme,
+                    Icons.cloud_sync,
+                    'Sync detections to the cloud',
+                  ),
+                  const SizedBox(height: 8),
+                  _buildAccountRequiredItem(
+                    colorScheme,
+                    Icons.devices,
+                    'Access data across devices',
+                  ),
+                  const SizedBox(height: 8),
+                  _buildAccountRequiredItem(
+                    colorScheme,
+                    Icons.security,
+                    'Secure your feeder connection',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Later'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.login),
+            label: const Text('Sign In'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      // Navigate to settings to log in - user can do it from there
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in from Settings to continue.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
+    return result ?? false;
+  }
+
+  Widget _buildAccountRequiredItem(ColorScheme colorScheme, IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _removeFeeder(PairedFeeder feeder) async {
@@ -128,6 +264,8 @@ class _FeederTabScreenState extends State<FeederTabScreen>
   @override
   void dispose() {
     _refreshAnimController.dispose();
+    _pulseAnimController.dispose();
+    _hardwareAnimController.dispose();
     _apiService.stopPolling();
     _firebaseService.stopListening();
     super.dispose();
@@ -150,6 +288,11 @@ class _FeederTabScreenState extends State<FeederTabScreen>
           return _buildNoDeviceState(colorScheme);
         }
 
+        // Start hardware animation when device is loaded
+        if (!_hardwareAnimController.isCompleted) {
+          _hardwareAnimController.forward();
+        }
+
         return RefreshIndicator(
           onRefresh: _refreshData,
           child: CustomScrollView(
@@ -162,6 +305,8 @@ class _FeederTabScreenState extends State<FeederTabScreen>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildDeviceCard(device, colorScheme),
+                      const SizedBox(height: 16),
+                      _buildHardwareCapabilities(colorScheme),
                       const SizedBox(height: 16),
                       _buildConnectionStatus(colorScheme),
                       const SizedBox(height: 16),
@@ -190,18 +335,34 @@ class _FeederTabScreenState extends State<FeederTabScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.rss_feed,
-                size: 60,
-                color: colorScheme.onPrimaryContainer,
-              ),
+            // Animated pulsing icon
+            AnimatedBuilder(
+              animation: _pulseAnimController,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: 1.0 + (_pulseAnimController.value * 0.05),
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.primary.withOpacity(0.3 * _pulseAnimController.value),
+                          blurRadius: 20 + (_pulseAnimController.value * 10),
+                          spreadRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.rss_feed,
+                      size: 60,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 32),
             Text(
@@ -222,15 +383,169 @@ class _FeederTabScreenState extends State<FeederTabScreen>
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
+
+            // Show account warning if not logged in
+            if (!_hasLoggedInUser) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: colorScheme.error.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: colorScheme.error,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Sign in required to set up a feeder',
+                        style: TextStyle(
+                          color: colorScheme.onErrorContainer,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: _addNewFeeder,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Feeder'),
+              icon: Icon(_hasLoggedInUser ? Icons.add : Icons.login),
+              label: Text(_hasLoggedInUser ? 'Add Feeder' : 'Sign In to Add Feeder'),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHardwareCapabilities(ColorScheme colorScheme) {
+    return ValueListenableBuilder<FeederSystemStatus?>(
+      valueListenable: _apiService.systemStatus,
+      builder: (context, status, _) {
+        if (status == null) {
+          return const SizedBox.shrink();
+        }
+
+        final hardware = status.hardware;
+        final hasHailo = hardware.hailoAvailable;
+        final hasDepthCamera = hardware.depthCameraAvailable;
+
+        // Don't show if no special hardware
+        if (!hasHailo && !hasDepthCamera) {
+          return const SizedBox.shrink();
+        }
+
+        return AnimatedBuilder(
+          animation: _hardwareAnimController,
+          builder: (context, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.2),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: _hardwareAnimController,
+                curve: Curves.easeOutCubic,
+              )),
+              child: FadeTransition(
+                opacity: _hardwareAnimController,
+                child: child,
+              ),
+            );
+          },
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.memory,
+                          color: colorScheme.onTertiaryContainer,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Hardware Capabilities',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          hardware.mode,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (hasHailo)
+                        Expanded(
+                          child: _HardwareFeatureCard(
+                            icon: Icons.auto_awesome,
+                            label: 'Hailo AI',
+                            description: 'Neural accelerator',
+                            color: Colors.purple,
+                            isAvailable: true,
+                            pulseController: _pulseAnimController,
+                          ),
+                        ),
+                      if (hasHailo && hasDepthCamera)
+                        const SizedBox(width: 12),
+                      if (hasDepthCamera)
+                        Expanded(
+                          child: _HardwareFeatureCard(
+                            icon: Icons.view_in_ar,
+                            label: '3D ToF Camera',
+                            description: 'Depth sensing',
+                            color: Colors.blue,
+                            isAvailable: true,
+                            pulseController: _pulseAnimController,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -767,6 +1082,116 @@ class _ActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _HardwareFeatureCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String description;
+  final Color color;
+  final bool isAvailable;
+  final AnimationController pulseController;
+
+  const _HardwareFeatureCard({
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.color,
+    required this.isAvailable,
+    required this.pulseController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: pulseController,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withOpacity(0.1),
+                color.withOpacity(0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: color.withOpacity(0.3 + (pulseController.value * 0.2)),
+              width: 1.5,
+            ),
+            boxShadow: isAvailable
+                ? [
+                    BoxShadow(
+                      color: color.withOpacity(0.15 * pulseController.value),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: color,
+                      size: 20,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isAvailable ? Colors.green : Colors.grey,
+                      boxShadow: isAvailable
+                          ? [
+                              BoxShadow(
+                                color: Colors.green.withOpacity(0.5),
+                                blurRadius: 4 + (pulseController.value * 3),
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: color.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

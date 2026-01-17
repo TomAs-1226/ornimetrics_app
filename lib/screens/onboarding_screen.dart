@@ -1759,7 +1759,36 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
             Center(
               child: TextButton(
-                onPressed: _nextPage,
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Skip Account Setup?'),
+                      content: const Text(
+                        'Without an account, you won\'t be able to:\n\n'
+                        '- Set up your Ornimetrics OS feeder\n'
+                        '- Sync bird detections to the cloud\n'
+                        '- Access your data across devices\n\n'
+                        'You can create an account later in Settings.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Go Back'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Skip Anyway'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('account_skipped', true);
+                    _nextPage();
+                  }
+                },
                 child: Text(
                   'Skip for now',
                   style: TextStyle(color: colorScheme.onSurfaceVariant),

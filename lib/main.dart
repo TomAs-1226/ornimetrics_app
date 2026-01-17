@@ -35,6 +35,7 @@ import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
 import 'screens/feeder_tab_screen.dart';
+import 'screens/demo_feeder_oobe_screen.dart';
 import 'services/feeder_bluetooth_service.dart';
 import 'services/feeder_api_service.dart';
 import 'services/feeder_firebase_service.dart';
@@ -7658,67 +7659,60 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   Future<void> _setupDemoFeeder() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Setup Demo Feeder?'),
-        content: const Text(
-          'This will create a simulated Ornimetrics OS feeder with demo data so you can test all the features.\n\n'
-          'Demo includes:\n'
-          '- Live connection status\n'
-          '- Sample detections & stats\n'
-          '- Individual bird profiles\n'
-          '- Simulated video stream\n\n'
-          'You can remove it anytime from the Feeder tab.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Setup Demo'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    // Show loading
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Setting up demo feeder...'),
-              ],
+    // Check if user is logged in
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.account_circle,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
+          title: const Text('Account Required'),
+          content: const Text(
+            'To set up your Ornimetrics OS feeder (even the demo), you need to sign in to your account first.\n\n'
+            'This ensures your bird detection data can be synced to the cloud.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.login),
+              label: const Text('Sign In'),
+            ),
+          ],
         ),
-      ),
-    );
-
-    try {
-      // Create demo paired feeder
-      final demoFeeder = PairedFeeder(
-        deviceId: 'demo-feeder-001',
-        deviceName: 'Demo Ornimetrics',
-        feederName: 'Demo Backyard Feeder',
-        staticIp: '192.168.1.200',
-        version: '1.0.0',
-        pairedAt: DateTime.now(),
-        userId: FirebaseAuth.instance.currentUser?.uid ?? 'demo-user',
       );
 
+      if (result == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please sign in from the Account section above.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Launch the demo OOBE screen
+    final result = await Navigator.of(context).push<PairedFeeder>(
+      MaterialPageRoute(builder: (_) => const DemoFeederOobeScreen()),
+    );
+
+    if (result != null && mounted) {
       // Save to paired devices
       final prefs = await SharedPreferences.getInstance();
       final existingData = prefs.getString('paired_ornimetrics_devices');
@@ -7728,24 +7722,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           devices = (json.decode(existingData) as List).cast<Map<String, dynamic>>();
         } catch (_) {}
       }
-      devices.removeWhere((d) => d['device_id'] == 'demo-feeder-001');
-      devices.add(demoFeeder.toJson());
+      devices.removeWhere((d) => d['device_id'] == result.deviceId);
+      devices.add(result.toJson());
       await prefs.setString('paired_ornimetrics_devices', json.encode(devices));
 
       // Set current device
-      FeederBluetoothService.instance.currentDevice.value = demoFeeder;
+      FeederBluetoothService.instance.currentDevice.value = result;
 
       // Setup API service with demo data
-      FeederApiService.instance.setFromPairedFeeder(demoFeeder);
+      FeederApiService.instance.setFromPairedFeeder(result);
 
       // Populate demo data
       _populateDemoData();
 
-      await Future.delayed(const Duration(milliseconds: 800));
-
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Demo feeder created! Go to the Feeder tab to explore.'),
@@ -7757,13 +7747,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             ),
             duration: const Duration(seconds: 4),
           ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error setting up demo: $e')),
         );
       }
     }
