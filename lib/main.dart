@@ -35,6 +35,10 @@ import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
 import 'screens/feeder_tab_screen.dart';
+import 'services/feeder_bluetooth_service.dart';
+import 'services/feeder_api_service.dart';
+import 'services/feeder_firebase_service.dart';
+import 'models/feeder_models.dart';
 
 
 // Global theme mode notifier
@@ -7628,6 +7632,22 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       _showEasterEgg();
                     },
                   ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Colors.green, Colors.teal, Colors.cyan],
+                      ).createShader(bounds),
+                      child: const Icon(Icons.rss_feed, color: Colors.white),
+                    ),
+                    title: const Text('Demo Feeder Setup'),
+                    subtitle: const Text('Test Ornimetrics OS integration'),
+                    trailing: const Icon(Icons.science),
+                    onTap: () async {
+                      safeLightHaptic();
+                      await _setupDemoFeeder();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -7637,6 +7657,304 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
+  Future<void> _setupDemoFeeder() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Setup Demo Feeder?'),
+        content: const Text(
+          'This will create a simulated Ornimetrics OS feeder with demo data so you can test all the features.\n\n'
+          'Demo includes:\n'
+          '- Live connection status\n'
+          '- Sample detections & stats\n'
+          '- Individual bird profiles\n'
+          '- Simulated video stream\n\n'
+          'You can remove it anytime from the Feeder tab.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Setup Demo'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Setting up demo feeder...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // Create demo paired feeder
+      final demoFeeder = PairedFeeder(
+        deviceId: 'demo-feeder-001',
+        deviceName: 'Demo Ornimetrics',
+        feederName: 'Demo Backyard Feeder',
+        staticIp: '192.168.1.200',
+        version: '1.0.0',
+        pairedAt: DateTime.now(),
+        userId: FirebaseAuth.instance.currentUser?.uid ?? 'demo-user',
+      );
+
+      // Save to paired devices
+      final prefs = await SharedPreferences.getInstance();
+      final existingData = prefs.getString('paired_ornimetrics_devices');
+      List<Map<String, dynamic>> devices = [];
+      if (existingData != null) {
+        try {
+          devices = (json.decode(existingData) as List).cast<Map<String, dynamic>>();
+        } catch (_) {}
+      }
+      devices.removeWhere((d) => d['device_id'] == 'demo-feeder-001');
+      devices.add(demoFeeder.toJson());
+      await prefs.setString('paired_ornimetrics_devices', json.encode(devices));
+
+      // Set current device
+      FeederBluetoothService.instance.currentDevice.value = demoFeeder;
+
+      // Setup API service with demo data
+      FeederApiService.instance.setFromPairedFeeder(demoFeeder);
+
+      // Populate demo data
+      _populateDemoData();
+
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Demo feeder created! Go to the Feeder tab to explore.'),
+            action: SnackBarAction(
+              label: 'Go Now',
+              onPressed: () {
+                Navigator.pop(context); // Close settings
+              },
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error setting up demo: $e')),
+        );
+      }
+    }
+  }
+
+  void _populateDemoData() {
+    final api = FeederApiService.instance;
+
+    // Populate system status
+    api.systemStatus.value = const FeederSystemStatus(
+      system: SystemInfo(
+        uptimeSeconds: 86400,
+        deviceId: 'demo-feeder-001',
+        version: '1.0.0',
+        accountLinked: true,
+      ),
+      hardware: HardwareInfo(
+        depthCameraAvailable: true,
+        hailoAvailable: true,
+        mode: 'Full 3D Mode',
+      ),
+      detection: DetectionInfo(
+        active: true,
+        fps: 15.3,
+        totalDetections: 247,
+      ),
+    );
+
+    // Populate stats
+    api.stats.value = FeederStats(
+      totalDetections: 247,
+      speciesCounts: {
+        'Cardinal': 68,
+        'Blue_Jay': 45,
+        'House_Finch': 38,
+        'American_Robin': 32,
+        'Black_Capped_Chickadee': 28,
+        'Mourning_Dove': 21,
+        'Downy_Woodpecker': 15,
+      },
+      uniqueIndividuals: 23,
+      detectionsToday: 34,
+      lastDetectionTime: DateTime.now().subtract(const Duration(minutes: 12)),
+    );
+
+    // Populate individuals
+    api.individuals.value = [
+      FeederIndividual(
+        id: 1,
+        species: 'Cardinal',
+        name: 'Cardinal #1 "Rusty"',
+        firstSeen: DateTime.now().subtract(const Duration(days: 45)),
+        lastSeen: DateTime.now().subtract(const Duration(hours: 2)),
+        visitCount: 156,
+        confidence: 0.94,
+      ),
+      FeederIndividual(
+        id: 2,
+        species: 'Blue_Jay',
+        name: 'Blue Jay #1 "Screamer"',
+        firstSeen: DateTime.now().subtract(const Duration(days: 30)),
+        lastSeen: DateTime.now().subtract(const Duration(hours: 5)),
+        visitCount: 89,
+        confidence: 0.91,
+      ),
+      FeederIndividual(
+        id: 3,
+        species: 'Cardinal',
+        name: 'Cardinal #2',
+        firstSeen: DateTime.now().subtract(const Duration(days: 20)),
+        lastSeen: DateTime.now().subtract(const Duration(minutes: 45)),
+        visitCount: 72,
+        confidence: 0.88,
+      ),
+      FeederIndividual(
+        id: 4,
+        species: 'House_Finch',
+        name: 'House Finch #1',
+        firstSeen: DateTime.now().subtract(const Duration(days: 15)),
+        lastSeen: DateTime.now().subtract(const Duration(hours: 1)),
+        visitCount: 54,
+        confidence: 0.85,
+      ),
+      FeederIndividual(
+        id: 5,
+        species: 'Black_Capped_Chickadee',
+        name: 'Chickadee #1 "Zippy"',
+        firstSeen: DateTime.now().subtract(const Duration(days: 12)),
+        lastSeen: DateTime.now().subtract(const Duration(minutes: 30)),
+        visitCount: 43,
+        confidence: 0.92,
+      ),
+    ];
+
+    // Populate recent detections
+    final now = DateTime.now();
+    api.recentDetections.value = [
+      FeederDetection(
+        timestamp: now.subtract(const Duration(minutes: 12)),
+        species: 'Cardinal',
+        confidence: 0.94,
+        individualId: 1,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(minutes: 28)),
+        species: 'Black_Capped_Chickadee',
+        confidence: 0.89,
+        individualId: 5,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(minutes: 45)),
+        species: 'Cardinal',
+        confidence: 0.91,
+        individualId: 3,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 1, minutes: 10)),
+        species: 'House_Finch',
+        confidence: 0.86,
+        individualId: 4,
+        has3d: false,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 1, minutes: 35)),
+        species: 'Blue_Jay',
+        confidence: 0.93,
+        individualId: 2,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 2, minutes: 5)),
+        species: 'Mourning_Dove',
+        confidence: 0.78,
+        has3d: false,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 2, minutes: 40)),
+        species: 'Cardinal',
+        confidence: 0.95,
+        individualId: 1,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 3, minutes: 15)),
+        species: 'Downy_Woodpecker',
+        confidence: 0.82,
+        has3d: true,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 4)),
+        species: 'American_Robin',
+        confidence: 0.88,
+        has3d: false,
+      ),
+      FeederDetection(
+        timestamp: now.subtract(const Duration(hours: 5, minutes: 20)),
+        species: 'Blue_Jay',
+        confidence: 0.90,
+        individualId: 2,
+        has3d: true,
+      ),
+    ];
+
+    // Populate training status
+    api.trainingStatus.value = TrainingStatus(
+      trainingEnabled: true,
+      isTraining: false,
+      nightModeActive: false,
+      trainingProgress: const TrainingProgress(
+        status: 'idle',
+        progress: 0.0,
+        message: 'Next training scheduled for 2:00 AM',
+      ),
+      datasetReady: true,
+      speciesCounts: {
+        'Cardinal': 127,
+        'Blue_Jay': 89,
+        'House_Finch': 76,
+        'American_Robin': 54,
+        'Black_Capped_Chickadee': 48,
+      },
+      lastTrainingTime: DateTime.now().subtract(const Duration(days: 1)),
+    );
+
+    // Mark as connected
+    api.isConnected.value = true;
+    api.lastUpdated.value = DateTime.now();
+  }
 }
 
 // ─────────────────────────────────────────────
