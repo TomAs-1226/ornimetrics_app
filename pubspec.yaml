@@ -51,6 +51,11 @@ dependencies:
   image: ^4.1.7
   path_provider: ^2.1.2
   share_plus: ^7.2.1
+  # Ornimetrics OS Integration
+  flutter_blue_plus: ^1.31.0
+  video_player: ^2.8.3
+  permission_handler: ^11.3.0
+  connectivity_plus: ^5.0.2
 
 # App Icon
 flutter_launcher_icons:

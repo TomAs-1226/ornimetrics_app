@@ -34,6 +34,7 @@ import 'services/community_service.dart';
 import 'services/maintenance_rules_engine.dart';
 import 'services/notifications_service.dart';
 import 'services/weather_provider.dart';
+import 'screens/feeder_tab_screen.dart';
 
 
 // Global theme mode notifier
@@ -2273,7 +2274,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Builder(
         builder: (context) {
           // Dismiss keyboard when switching tabs
@@ -2309,6 +2310,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                       onTap: (_) => FocusScope.of(context).unfocus(),
                       tabs: const [
                         Tab(icon: Icon(Icons.dashboard, size: 20), text: 'Home'),
+                        Tab(icon: Icon(Icons.rss_feed, size: 20), text: 'Feeder'),
                         Tab(icon: Icon(Icons.photo_camera_back_outlined, size: 20), text: 'Photos'),
                         Tab(icon: Icon(Icons.cloud_outlined, size: 20), text: 'Weather'),
                         Tab(icon: Icon(Icons.groups_2_outlined, size: 20), text: 'Social'),
@@ -2319,6 +2321,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
                   body: TabBarView(
                     children: [
                       _buildDashboardTab(),
+                      const FeederTabScreen(),
                       _buildRecentDetectionsTab(),
                       _buildEnvironmentTab(),
                       CommunityCenterScreen(
