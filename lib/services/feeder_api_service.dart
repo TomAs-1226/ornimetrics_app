@@ -365,10 +365,13 @@ extension FeederApiServiceExtensions on FeederApiService {
     return '$_baseUrl/video_feed';
   }
 
-  /// Get RTSP URL (requires parsing from status)
+  /// Get RTSP URL (constructed from base URL)
   String? get rtspStreamUrl {
-    final status = systemStatus.value;
-    return status?.streaming?.rtspUrl;
+    if (_baseUrl == null) return null;
+    // Extract IP from base URL and construct RTSP URL
+    final uri = Uri.tryParse(_baseUrl!);
+    if (uri == null) return null;
+    return 'rtsp://${uri.host}:8554/ornimetrics/stream';
   }
 
   /// Check if 3D camera is available
