@@ -56,6 +56,9 @@ dependencies:
   video_player: ^2.8.3
   permission_handler: ^11.3.0
   connectivity_plus: ^5.0.2
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  url_launcher: ^6.2.6
 
 # App Icon
 flutter_launcher_icons:

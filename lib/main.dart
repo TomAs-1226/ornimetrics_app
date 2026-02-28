@@ -13,12 +13,15 @@ import 'package:flutter/foundation.dart'; // for ValueListenableBuilder
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:pie_chart/pie_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'firebase_options.dart';
 import 'models/weather_models.dart';
@@ -896,6 +899,8 @@ class WildlifeApp extends StatefulWidget {
 
 class _WildlifeAppState extends State<WildlifeApp> {
   bool? _showOnboarding;
+  bool _ready = false;
+  bool _offlineMode = false;
 
   @override
   void initState() {
@@ -906,11 +911,52 @@ class _WildlifeAppState extends State<WildlifeApp> {
   Future<void> _checkOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     final completed = prefs.getBool('onboarding_complete') ?? false;
-    setState(() => _showOnboarding = !completed);
+    _offlineMode = prefs.getBool('offline_mode') ?? false;
+    setState(() {
+      _showOnboarding = !completed;
+      _ready = true;
+    });
   }
 
-  void _onOnboardingComplete() {
+  void _onOnboardingComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    _offlineMode = prefs.getBool('offline_mode') ?? false;
     setState(() => _showOnboarding = false);
+  }
+
+  void _onAuthComplete() {
+    setState(() {}); // Auth state changed – StreamBuilder will rebuild
+  }
+
+  Widget _resolveHome() {
+    if (!_ready || _showOnboarding == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_showOnboarding!) {
+      return OnboardingScreen(onComplete: _onOnboardingComplete);
+    }
+    // Auth gate: show main app only when logged in or offline mode is selected
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (ctx, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        final user = snap.data;
+        if (user != null || _offlineMode) {
+          return WildlifeTrackerScreen(offlineMode: _offlineMode && user == null);
+        }
+        // Not logged in and not offline — show auth gate
+        return AuthGateScreen(
+          onComplete: _onAuthComplete,
+          onOfflineMode: () async {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setBool('offline_mode', true);
+            setState(() => _offlineMode = true);
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -959,11 +1005,7 @@ class _WildlifeAppState extends State<WildlifeApp> {
                       child: child!,
                     );
                   },
-                  home: _showOnboarding == null
-                      ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-                      : _showOnboarding!
-                      ? OnboardingScreen(onComplete: _onOnboardingComplete)
-                      : const WildlifeTrackerScreen(),
+                  home: _resolveHome(),
                 );
               },
             );
@@ -974,8 +1016,349 @@ class _WildlifeAppState extends State<WildlifeApp> {
   }
 }
 
+// ─────────────────────────────────────────────
+// Auth Gate Screen - Clean entry point requiring login or offline choice
+// ─────────────────────────────────────────────
+class AuthGateScreen extends StatefulWidget {
+  final VoidCallback onComplete;
+  final VoidCallback onOfflineMode;
+
+  const AuthGateScreen({super.key, required this.onComplete, required this.onOfflineMode});
+
+  @override
+  State<AuthGateScreen> createState() => _AuthGateScreenState();
+}
+
+class _AuthGateScreenState extends State<AuthGateScreen> with SingleTickerProviderStateMixin {
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+  bool _isLogin = true;
+  bool _loading = false;
+  String? _error;
+  bool _obscure = true;
+  late AnimationController _animCtrl;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
+    _animCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleAuth() async {
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _error = 'Please enter email and password.');
+      return;
+    }
+    if (!_isLogin && password != _confirmPasswordCtrl.text) {
+      setState(() => _error = 'Passwords do not match.');
+      return;
+    }
+    if (!_isLogin && password.length < 6) {
+      setState(() => _error = 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setState(() { _loading = true; _error = null; });
+    try {
+      if (_isLogin) {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
+      } else {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('offline_mode', false);
+      if (mounted) widget.onComplete();
+    } on FirebaseAuthException catch (e) {
+      setState(() => _error = _friendlyAuthError(e.code, e.message));
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Enter your email address above to reset password.');
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reset email sent to $email'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = 'Failed to send reset email.');
+    }
+  }
+
+  String _friendlyAuthError(String code, String? message) {
+    switch (code) {
+      case 'user-not-found': return 'No account found with this email.';
+      case 'wrong-password': return 'Incorrect password. Please try again.';
+      case 'email-already-in-use': return 'This email is already registered. Try signing in.';
+      case 'invalid-email': return 'Please enter a valid email address.';
+      case 'weak-password': return 'Password is too weak. Use at least 6 characters.';
+      case 'network-request-failed': return 'Network error. Check your internet connection.';
+      case 'too-many-requests': return 'Too many failed attempts. Please try again later.';
+      default: return message ?? 'Authentication failed. Please try again.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final size = MediaQuery.of(context).size;
+
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              cs.primaryContainer.withOpacity(0.8),
+              cs.surface,
+              cs.secondaryContainer.withOpacity(0.5),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: size.width > 600 ? size.width * 0.25 : 28,
+                vertical: 24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 32),
+                  // Logo & title
+                  Center(
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: cs.primary.withOpacity(0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.flutter_dash, size: 48, color: cs.primary),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Ornimetrics', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: cs.primary)),
+                        const SizedBox(height: 4),
+                        Text('Smart Bird Monitoring', style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Tab switcher
+                  Container(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceVariant.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildTabBtn('Sign In', _isLogin, () => setState(() { _isLogin = true; _error = null; }), cs),
+                        _buildTabBtn('Create Account', !_isLogin, () => setState(() { _isLogin = false; _error = null; }), cs),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Email field
+                  TextField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Email address',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: cs.surface.withOpacity(0.9),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Password field
+                  TextField(
+                    controller: _passwordCtrl,
+                    obscureText: _obscure,
+                    textInputAction: _isLogin ? TextInputAction.done : TextInputAction.next,
+                    onSubmitted: _isLogin ? (_) => _handleAuth() : null,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: cs.surface.withOpacity(0.9),
+                    ),
+                  ),
+
+                  // Confirm password (register only)
+                  if (!_isLogin) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _confirmPasswordCtrl,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _handleAuth(),
+                      decoration: InputDecoration(
+                        labelText: 'Confirm password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: cs.surface.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+
+                  // Forgot password
+                  if (_isLogin) ...[
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _resetPassword,
+                        child: const Text('Forgot password?'),
+                      ),
+                    ),
+                  ] else
+                    const SizedBox(height: 8),
+
+                  // Error message
+                  if (_error != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13))),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+
+                  // Sign in / Register button
+                  FilledButton(
+                    onPressed: _loading ? null : _handleAuth,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(_isLogin ? 'Sign In' : 'Create Account', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Divider
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: cs.onSurfaceVariant.withOpacity(0.3))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('or', style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+                      ),
+                      Expanded(child: Divider(color: cs.onSurfaceVariant.withOpacity(0.3))),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Offline mode button
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.cloud_off_outlined),
+                    label: const Text('Continue without account'),
+                    onPressed: widget.onOfflineMode,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Offline mode: AI identification works, but detections won\'t be saved to your account. You can sign in anytime from Settings.',
+                    style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabBtn(String label, bool active, VoidCallback onTap, ColorScheme cs) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.all(4),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: active ? cs.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: active ? cs.onPrimary : cs.onSurfaceVariant,
+              fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class WildlifeTrackerScreen extends StatefulWidget {
-  const WildlifeTrackerScreen({super.key});
+  final bool offlineMode;
+  const WildlifeTrackerScreen({super.key, this.offlineMode = false});
 
   @override
   State<WildlifeTrackerScreen> createState() => _WildlifeTrackerScreenState();
@@ -1660,14 +2043,44 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchTodaySummaryFlexible({String sessionKey = 'session_1'}) async {
+    // Offline mode: no Firebase reads, show empty state
+    if (widget.offlineMode) {
+      if (!mounted) return;
+      setState(() {
+        _totalDetections = 0;
+        _speciesDataMap = {};
+        _isLoading = false;
+        _error = '';
+      });
+      return;
+    }
+
     try {
       final db = primaryDatabase().ref();
+      final user = FirebaseAuth.instance.currentUser;
 
       final String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       String usedDate = today;
 
+      // First, try user-specific paths when user is logged in
+      Map<String, double> species = {};
+      if (user != null) {
+        // Try to read from user-specific Firestore daily stats
+        // Fall back to RTDB user paths
+        final userDetectionsSnap = await db.child('users/${user.uid}/detections').orderByKey().limitToLast(1).get();
+        if (userDetectionsSnap.exists && userDetectionsSnap.value is Map) {
+          final raw = Map<dynamic, dynamic>.from(userDetectionsSnap.value as Map);
+          raw.forEach((dateKey, dateValue) {
+            final counts = _extractSummaryCounts(dateValue);
+            _mergeCountsInPlace(species, counts);
+          });
+        }
+      }
+
+      // Fall through to legacy global paths if no user-specific data
+      if (species.isEmpty) {
       // 1) Try to aggregate all summaries for today (old + new shapes)
-      Map<String, double> species = await _collectSummariesForDate(today, sessionKey);
+        species = await _collectSummariesForDate(today, sessionKey);
 
       // 2) If none found for today, fall back to the latest date key under /detections
       if (species.isEmpty) {
@@ -1683,6 +2096,7 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
           species = await _collectSummariesForDate(usedDate, sessionKey);
         }
       }
+      } // end if species.isEmpty for user-specific data
 
       final int total = species.values.fold<int>(0, (acc, d) => acc + d.toInt());
 
@@ -1755,8 +2169,30 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
   }
 
   Future<void> _fetchPhotoSnapshots() async {
+    // Offline mode: skip Firebase reads
+    if (widget.offlineMode) {
+      if (!mounted) return;
+      setState(() { _photos = []; _loadingPhotos = false; _photoError = ''; });
+      return;
+    }
+
     await _captureLocation();
-    final ref = primaryDatabase().ref(kPhotoFeedPath);
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Try user-specific photos first (from feeder linked to this user)
+    DatabaseReference ref;
+    if (user != null) {
+      // Check if user has any feeders with photos stored in user-specific path
+      final userPhotosRef = primaryDatabase().ref('users/${user.uid}/photo_snapshots');
+      final userSnap = await userPhotosRef.limitToLast(1).get();
+      if (userSnap.exists) {
+        ref = userPhotosRef;
+      } else {
+        ref = primaryDatabase().ref(kPhotoFeedPath);
+      }
+    } else {
+      ref = primaryDatabase().ref(kPhotoFeedPath);
+    }
     try {
       DataSnapshot snap;
 
@@ -2459,6 +2895,54 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
     );
   }
 
+  Widget _buildOfflineModeAccountBanner() {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.secondary.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, color: cs.secondary, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Offline Mode', style: TextStyle(fontWeight: FontWeight.bold, color: cs.secondary)),
+                Text('Sign in to save detections and sync feeder data.', style: TextStyle(fontSize: 12, color: cs.onSecondaryContainer)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => AuthGateScreen(
+                  onComplete: () async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('offline_mode', false);
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                        (_) => false,
+                      );
+                    }
+                  },
+                  onOfflineMode: () => Navigator.of(context).pop(),
+                ),
+              ));
+            },
+            child: const Text('Sign in'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOfflineBanner() {
     final timeAgo = _cachedDataTime != null
         ? _formatTimeAgo(_cachedDataTime!)
@@ -2547,8 +3031,10 @@ class _WildlifeTrackerScreenState extends State<WildlifeTrackerScreen> with Sing
         controller: _scrollController,
         padding: const EdgeInsets.all(16.0),
         children: [
-          // Offline mode banner
-          if (_isUsingCachedData) _buildOfflineBanner(),
+          // Offline mode banner (no account)
+          if (widget.offlineMode) _buildOfflineModeAccountBanner(),
+          // Offline mode banner (cached data)
+          if (_isUsingCachedData && !widget.offlineMode) _buildOfflineBanner(),
           const Text(
             'Live Animal Detection',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -7553,6 +8039,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 : const Icon(Icons.chevron_right),
             onTap: _handleVersionTap,
           ),
+          // Account section
+          const Divider(),
+          _buildAccountSettingsSection(),
+
           // Secret options - only visible when easter egg is unlocked
           if (_easterEggUnlocked) ...[
             const Divider(),
@@ -7660,6 +8150,103 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildAccountSettingsSection() {
+    final user = FirebaseAuth.instance.currentUser;
+    final cs = Theme.of(context).colorScheme;
+    return FutureBuilder<SharedPreferences>(
+      future: SharedPreferences.getInstance(),
+      builder: (ctx, prefs) {
+        final offlineMode = prefs.data?.getBool('offline_mode') ?? false;
+        if (user != null) {
+          return Column(children: [
+            ListTile(
+              leading: const Icon(Icons.account_circle_outlined),
+              title: const Text('Account'),
+              subtitle: Text(user.email ?? user.uid, overflow: TextOverflow.ellipsis),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Sign out', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Sign out?'),
+                    content: const Text('You\'ll need to sign in again to access your detection data.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Sign out'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await FirebaseAuth.instance.signOut();
+                  final p = await SharedPreferences.getInstance();
+                  await p.setBool('offline_mode', false);
+                  if (mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => AuthGateScreen(
+                        onComplete: () => Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                          (_) => false,
+                        ),
+                        onOfflineMode: () async {
+                          final p2 = await SharedPreferences.getInstance();
+                          await p2.setBool('offline_mode', true);
+                          if (context.mounted) {
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen(offlineMode: true)),
+                              (_) => false,
+                            );
+                          }
+                        },
+                      )),
+                      (_) => false,
+                    );
+                  }
+                }
+              },
+            ),
+          ]);
+        } else if (offlineMode) {
+          return Column(children: [
+            ListTile(
+              leading: Icon(Icons.cloud_off, color: cs.primary),
+              title: const Text('Offline mode'),
+              subtitle: const Text('Not signed in — detections not saved'),
+            ),
+            ListTile(
+              leading: Icon(Icons.login, color: cs.primary),
+              title: const Text('Sign in to account'),
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => AuthGateScreen(
+                    onComplete: () async {
+                      final p = await SharedPreferences.getInstance();
+                      await p.setBool('offline_mode', false);
+                      if (context.mounted) {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                          (_) => false,
+                        );
+                      }
+                    },
+                    onOfflineMode: () => Navigator.of(context).pop(),
+                  ),
+                ));
+              },
+            ),
+          ]);
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
 
@@ -8235,6 +8822,27 @@ class _ToolsScreenState extends State<ToolsScreen> {
                               'Sign in to view and save your personal field detections',
                               style: TextStyle(fontSize: 12, color: Colors.orange[800]),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => AuthGateScreen(
+                                  onComplete: () async {
+                                    final p = await SharedPreferences.getInstance();
+                                    await p.setBool('offline_mode', false);
+                                    if (context.mounted) {
+                                      Navigator.of(context).pushAndRemoveUntil(
+                                        MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                                        (_) => false,
+                                      );
+                                    }
+                                  },
+                                  onOfflineMode: () => Navigator.of(context).pop(),
+                                ),
+                              ));
+                            },
+                            child: const Text('Sign in', style: TextStyle(fontSize: 12)),
                           ),
                         ],
                       ),
@@ -8927,15 +9535,10 @@ class _ToolsScreenState extends State<ToolsScreen> {
                 ]),
               ],
 
-              // Location
+              // Location with Map View
               if (location != null) ...[
                 const SizedBox(height: 16),
-                _buildDetailSection(colorScheme, Icons.location_on, 'Location', [
-                  _buildDetailRow('Latitude', location['latitude']?.toString() ?? 'N/A'),
-                  _buildDetailRow('Longitude', location['longitude']?.toString() ?? 'N/A'),
-                  if (location['accuracy'] != null)
-                    _buildDetailRow('Accuracy', '${location['accuracy']}m'),
-                ]),
+                _buildLocationSectionWithMap(colorScheme, location),
               ],
 
               // Weather
@@ -8969,6 +9572,106 @@ class _ToolsScreenState extends State<ToolsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildLocationSectionWithMap(ColorScheme colorScheme, Map<dynamic, dynamic> location) {
+    final lat = (location['latitude'] as num?)?.toDouble();
+    final lng = (location['longitude'] as num?)?.toDouble();
+    final accuracy = location['accuracy'];
+    final hasCoords = lat != null && lng != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.location_on, size: 18, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text('Location', style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary)),
+            const Spacer(),
+            if (hasCoords) ...[
+              TextButton.icon(
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open Maps', style: TextStyle(fontSize: 13)),
+                onPressed: () => _openInMaps(lat!, lng!),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              if (hasCoords) ...[
+                // Embedded map preview
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: SizedBox(
+                    height: 200,
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: ll.LatLng(lat!, lng!),
+                        initialZoom: 14,
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                        ),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.ornimetrics.app',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: ll.LatLng(lat!, lng!),
+                              width: 40,
+                              height: 40,
+                              child: const Icon(Icons.location_pin, color: Colors.red, size: 40),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              // Coordinate details
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    _buildDetailRow('Latitude', lat?.toStringAsFixed(6) ?? 'N/A'),
+                    _buildDetailRow('Longitude', lng?.toStringAsFixed(6) ?? 'N/A'),
+                    if (accuracy != null)
+                      _buildDetailRow('Accuracy', '${accuracy}m'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openInMaps(double lat, double lng) async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      // Try Apple Maps on iOS
+      final appleUri = Uri.parse('https://maps.apple.com/?q=$lat,$lng');
+      try {
+        await launchUrl(appleUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
   }
 
   Widget _buildDetailSection(ColorScheme colorScheme, IconData icon, String title, List<Widget> children) {
@@ -9576,7 +10279,7 @@ class BirdDetectionService {
   Future<Map<String, dynamic>> _identifyWithCloudAI(Uint8List imageBytes) async {
     final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
-      throw Exception('Service not configured');
+      throw Exception('OPENAI_API_KEY is not configured. Please add it to your .env file.');
     }
 
     final base64Image = base64Encode(imageBytes);
@@ -9592,49 +10295,125 @@ class BirdDetectionService {
         'messages': [
           {
             'role': 'system',
-            'content': '''You are a bird identification expert. Analyze the image and identify the bird species.
-Return ONLY a JSON object with this exact structure:
+            'content': '''You are an expert ornithologist and bird identification specialist. Carefully analyze the image and identify any bird species visible.
+
+Return ONLY a valid JSON object (no markdown, no extra text) with this exact structure:
 {
   "species": "Common Name",
-  "scientific_name": "Scientific name",
-  "confidence": 0.85
+  "scientific_name": "Genus species",
+  "confidence": 0.85,
+  "family": "Family name",
+  "order": "Order name",
+  "habitat": "Brief habitat description",
+  "diet": "Brief diet description",
+  "conservation_status": "LC/NT/VU/EN/CR/EW/EX",
+  "range": "Brief geographic range",
+  "interesting_fact": "One interesting fact about this species",
+  "top_predictions": [
+    {"species": "Most likely species", "scientific_name": "...", "confidence": 0.85},
+    {"species": "Second possibility", "scientific_name": "...", "confidence": 0.10},
+    {"species": "Third possibility", "scientific_name": "...", "confidence": 0.05}
+  ]
 }
-If no bird is visible, return {"species": "Unknown", "scientific_name": "", "confidence": 0.0}'''
+
+If the image is unclear or no bird is visible, return:
+{"species": "No bird detected", "scientific_name": "", "confidence": 0.0, "top_predictions": []}
+
+Conservation status codes: LC=Least Concern, NT=Near Threatened, VU=Vulnerable, EN=Endangered, CR=Critically Endangered.'''
           },
           {
             'role': 'user',
             'content': [
               {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,$base64Image', 'detail': 'high'}},
-              {'type': 'text', 'text': 'Identify the bird species.'}
+              {'type': 'text', 'text': 'Please identify the bird species in this image and provide detailed information.'}
             ]
           }
         ],
-        'max_tokens': 200,
+        'max_tokens': 600,
+        'temperature': 0.1,
       }),
-    );
+    ).timeout(const Duration(seconds: 30));
 
+    if (response.statusCode == 401) {
+      throw Exception('Invalid OpenAI API key. Please check your OPENAI_API_KEY in the .env file.');
+    }
+    if (response.statusCode == 429) {
+      throw Exception('OpenAI rate limit exceeded. Please try again in a moment.');
+    }
     if (response.statusCode != 200) {
       debugPrint('OpenAI API Error: ${response.statusCode} - ${response.body}');
-      final errorBody = jsonDecode(response.body);
-      final errorMsg = errorBody['error']?['message'] ?? 'Service unavailable';
+      String errorMsg = 'Service unavailable (${response.statusCode})';
+      try {
+        final errorBody = jsonDecode(response.body);
+        errorMsg = errorBody['error']?['message'] ?? errorMsg;
+      } catch (_) {}
       throw Exception(errorMsg);
     }
 
     final data = jsonDecode(response.body);
-    final content = data['choices'][0]['message']['content'] as String;
+    if (data['choices'] == null || (data['choices'] as List).isEmpty) {
+      throw Exception('Empty response from AI service');
+    }
 
-    final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(content);
-    if (jsonMatch == null) throw Exception('Invalid response');
+    final content = data['choices'][0]['message']['content'] as String? ?? '';
 
-    final result = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+    // Extract JSON from the response (handle possible markdown code blocks)
+    String jsonString = content.trim();
+    if (jsonString.startsWith('```')) {
+      final startIdx = jsonString.indexOf('{');
+      final endIdx = jsonString.lastIndexOf('}');
+      if (startIdx != -1 && endIdx != -1) {
+        jsonString = jsonString.substring(startIdx, endIdx + 1);
+      }
+    }
+
+    final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(jsonString);
+    if (jsonMatch == null) {
+      debugPrint('BirdDetectionService: No JSON in response: $content');
+      throw Exception('Could not parse AI response. Please try again.');
+    }
+
+    Map<String, dynamic> result;
+    try {
+      result = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('Invalid response format from AI. Please try again.');
+    }
+
+    // Parse top predictions
+    final rawPredictions = result['top_predictions'] as List? ?? [];
+    final topPredictions = rawPredictions.map((p) {
+      if (p is Map) {
+        return {
+          'species': p['species']?.toString() ?? 'Unknown',
+          'scientific_name': p['scientific_name']?.toString() ?? '',
+          'confidence': (p['confidence'] as num?)?.toDouble() ?? 0.0,
+        };
+      }
+      return <String, dynamic>{};
+    }).where((p) => p.isNotEmpty).toList();
+
+    // If no top predictions, create from main result
+    if (topPredictions.isEmpty && result['species'] != null) {
+      topPredictions.add({
+        'species': result['species'],
+        'scientific_name': result['scientific_name'] ?? '',
+        'confidence': (result['confidence'] as num?)?.toDouble() ?? 0.0,
+      });
+    }
 
     return {
-      'species': result['species'] ?? 'Unknown',
-      'scientific_name': result['scientific_name'] ?? '',
-      'confidence': (result['confidence'] ?? 0.0).toDouble(),
-      'top_predictions': [
-        {'species': result['species'] ?? 'Unknown', 'confidence': (result['confidence'] ?? 0.0).toDouble()}
-      ],
+      'species': result['species']?.toString() ?? 'Unknown',
+      'scientific_name': result['scientific_name']?.toString() ?? '',
+      'confidence': (result['confidence'] as num?)?.toDouble() ?? 0.0,
+      'family': result['family']?.toString() ?? '',
+      'order': result['order']?.toString() ?? '',
+      'habitat': result['habitat']?.toString() ?? '',
+      'diet': result['diet']?.toString() ?? '',
+      'conservation_status': result['conservation_status']?.toString() ?? '',
+      'range': result['range']?.toString() ?? '',
+      'interesting_fact': result['interesting_fact']?.toString() ?? '',
+      'top_predictions': topPredictions,
     };
   }
 
@@ -10211,6 +10990,15 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
   String? _analysisError;
   String? _speciesExplanation;
 
+  // Rich species data from GPT
+  String? _family;
+  String? _order;
+  String? _habitat;
+  String? _diet;
+  String? _conservationStatus;
+  String? _range;
+  String? _interestingFact;
+
   // Save options
   bool _includeLocation = true;
   bool _includeWeather = true;
@@ -10302,13 +11090,23 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         setState(() {
           _identifiedSpecies = result['species'];
           _scientificName = result['scientific_name'];
-          _confidence = result['confidence'];
-          _topPredictions = List<Map<String, dynamic>>.from(result['top_predictions']);
+          _confidence = (result['confidence'] as num?)?.toDouble();
+          _topPredictions = List<Map<String, dynamic>>.from(result['top_predictions'] ?? []);
+          // Rich data from improved GPT response
+          _family = result['family']?.toString();
+          _order = result['order']?.toString();
+          _habitat = result['habitat']?.toString();
+          _diet = result['diet']?.toString();
+          _conservationStatus = result['conservation_status']?.toString();
+          _range = result['range']?.toString();
+          _interestingFact = result['interesting_fact']?.toString();
           _isAnalyzing = false;
         });
 
-        // Automatically fetch AI explanation
-        _fetchSpeciesExplanation();
+        // Only fetch additional explanation if GPT didn't provide enough detail
+        if (_habitat == null || _habitat!.isEmpty) {
+          _fetchSpeciesExplanation();
+        }
 
         // Pre-fetch location and weather for save
         _prefetchMetadata();
@@ -10450,7 +11248,23 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
               label: 'Sign In',
               textColor: Colors.white,
               onPressed: () {
-                // Navigate to login if there's a login screen
+                if (context.mounted) {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AuthGateScreen(
+                      onComplete: () async {
+                        final p = await SharedPreferences.getInstance();
+                        await p.setBool('offline_mode', false);
+                        if (context.mounted) {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (_) => const WildlifeTrackerScreen()),
+                            (_) => false,
+                          );
+                        }
+                      },
+                      onOfflineMode: () => Navigator.of(context).pop(),
+                    ),
+                  ));
+                }
               },
             ),
           ),
@@ -10495,6 +11309,18 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
       // Add AI explanation if enabled
       if (_includeAIAnalysis && _speciesExplanation != null) {
         detectionData['ai_analysis'] = _speciesExplanation;
+      }
+
+      // Add rich species data
+      if (_family != null && _family!.isNotEmpty) detectionData['family'] = _family;
+      if (_habitat != null && _habitat!.isNotEmpty) detectionData['habitat'] = _habitat;
+      if (_diet != null && _diet!.isNotEmpty) detectionData['diet'] = _diet;
+      if (_conservationStatus != null && _conservationStatus!.isNotEmpty) {
+        detectionData['conservation_status'] = _conservationStatus;
+      }
+      if (_range != null && _range!.isNotEmpty) detectionData['range'] = _range;
+      if (_interestingFact != null && _interestingFact!.isNotEmpty) {
+        detectionData['interesting_fact'] = _interestingFact;
       }
 
       // Add top predictions
@@ -10827,24 +11653,90 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
                   ),
                 ],
 
+                // Rich species data
+                if (_habitat != null && _habitat!.isNotEmpty ||
+                    _diet != null && _diet!.isNotEmpty ||
+                    _conservationStatus != null && _conservationStatus!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.info_outline, size: 14, color: colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text('Species Info', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorScheme.primary)),
+                        ]),
+                        const SizedBox(height: 8),
+                        if (_family != null && _family!.isNotEmpty)
+                          _buildInfoRow(Icons.category_outlined, 'Family', _family!),
+                        if (_habitat != null && _habitat!.isNotEmpty)
+                          _buildInfoRow(Icons.park_outlined, 'Habitat', _habitat!),
+                        if (_diet != null && _diet!.isNotEmpty)
+                          _buildInfoRow(Icons.restaurant_outlined, 'Diet', _diet!),
+                        if (_range != null && _range!.isNotEmpty)
+                          _buildInfoRow(Icons.map_outlined, 'Range', _range!),
+                        if (_conservationStatus != null && _conservationStatus!.isNotEmpty)
+                          _buildInfoRow(
+                            _getConservationIcon(_conservationStatus!),
+                            'Conservation',
+                            _getConservationLabel(_conservationStatus!),
+                            color: _getConservationColor(_conservationStatus!),
+                          ),
+                        if (_interestingFact != null && _interestingFact!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.star_outline, size: 14, color: Colors.amber),
+                                const SizedBox(width: 6),
+                                Expanded(child: Text(_interestingFact!, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic))),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Other predictions
                 if (_topPredictions != null && _topPredictions!.length > 1) ...[
                   const SizedBox(height: 12),
                   Text('Other possibilities:', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    children: _topPredictions!.skip(1).map((p) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceVariant.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${p['species']} (${((p['confidence'] as double) * 100).toStringAsFixed(0)}%)',
-                        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
-                      ),
-                    )).toList(),
+                  Column(
+                    children: _topPredictions!.skip(1).take(2).map((p) {
+                      final conf = (p['confidence'] as num?)?.toDouble() ?? 0.0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          Expanded(child: Text(
+                            '${p['species']}',
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          )),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 80,
+                            child: LinearProgressIndicator(value: conf, color: Colors.teal, backgroundColor: colorScheme.surfaceVariant, minHeight: 6),
+                          ),
+                          const SizedBox(width: 6),
+                          Text('${(conf * 100).toStringAsFixed(0)}%', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                        ]),
+                      );
+                    }).toList(),
                   ),
                 ],
               ],
@@ -10944,6 +11836,54 @@ class _AIIdentifierSheetState extends State<_AIIdentifierSheet> {
         ],
       ],
     );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: color ?? Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text('$label: ', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          Expanded(child: Text(value, style: TextStyle(fontSize: 12, color: color))),
+        ],
+      ),
+    );
+  }
+
+  IconData _getConservationIcon(String status) {
+    switch (status.toUpperCase()) {
+      case 'CR': case 'EN': return Icons.warning_amber;
+      case 'VU': return Icons.error_outline;
+      case 'NT': return Icons.info_outline;
+      default: return Icons.check_circle_outline;
+    }
+  }
+
+  String _getConservationLabel(String status) {
+    switch (status.toUpperCase()) {
+      case 'LC': return 'Least Concern';
+      case 'NT': return 'Near Threatened';
+      case 'VU': return 'Vulnerable';
+      case 'EN': return 'Endangered';
+      case 'CR': return 'Critically Endangered';
+      case 'EW': return 'Extinct in the Wild';
+      case 'EX': return 'Extinct';
+      default: return status;
+    }
+  }
+
+  Color _getConservationColor(String status) {
+    switch (status.toUpperCase()) {
+      case 'LC': return Colors.green;
+      case 'NT': return Colors.lightGreen;
+      case 'VU': return Colors.orange;
+      case 'EN': return Colors.deepOrange;
+      case 'CR': case 'EW': case 'EX': return Colors.red;
+      default: return Colors.grey;
+    }
   }
 
   Widget _buildSaveOption(ColorScheme colorScheme, IconData icon, String title, String subtitle, bool value, Function(bool) onChanged) {

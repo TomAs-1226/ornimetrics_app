@@ -305,6 +305,8 @@ class _FeederTabScreenState extends State<FeederTabScreen>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildDeviceCard(device, colorScheme),
+                      const SizedBox(height: 12),
+                      _buildWarningsBanner(colorScheme),
                       const SizedBox(height: 16),
                       _buildHardwareCapabilities(colorScheme),
                       const SizedBox(height: 16),
@@ -547,6 +549,73 @@ class _FeederTabScreenState extends State<FeederTabScreen>
         );
       },
     );
+  }
+
+  Widget _buildWarningsBanner(ColorScheme colorScheme) {
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: _apiService.warnings,
+      builder: (context, warnings, _) {
+        if (warnings.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          children: warnings.map((w) {
+            final level = w['level']?.toString() ?? 'info';
+            final code = w['code']?.toString() ?? '';
+            final message = w['message']?.toString() ?? code;
+
+            Color bgColor;
+            Color iconColor;
+            IconData icon;
+            switch (level) {
+              case 'error':
+                bgColor = Colors.red.withOpacity(0.1);
+                iconColor = Colors.red;
+                icon = Icons.error_outline;
+              case 'warning':
+                bgColor = Colors.orange.withOpacity(0.1);
+                iconColor = Colors.orange;
+                icon = Icons.warning_amber_outlined;
+              default:
+                bgColor = colorScheme.primaryContainer.withOpacity(0.4);
+                iconColor = colorScheme.primary;
+                icon = Icons.info_outline;
+            }
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: iconColor.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, color: iconColor, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _friendlyWarningMessage(code, message),
+                      style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  String _friendlyWarningMessage(String code, String message) {
+    switch (code) {
+      case 'no_depth': return 'Depth camera not detected — 3D tracking disabled.';
+      case 'single_camera': return 'Only one camera found. Dual-camera mode unavailable.';
+      case 'no_reid': return 'Individual recognition model not loaded.';
+      case 'mono_pointcloud': return 'Using monocular depth for 3D (reduced accuracy).';
+      default: return message;
+    }
   }
 
   Widget _buildDeviceCard(PairedFeeder device, ColorScheme colorScheme) {

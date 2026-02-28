@@ -22,6 +22,7 @@ class FeederApiService {
   final ValueNotifier<List<FeederIndividual>> individuals = ValueNotifier([]);
   final ValueNotifier<List<FeederDetection>> recentDetections = ValueNotifier([]);
   final ValueNotifier<TrainingStatus?> trainingStatus = ValueNotifier(null);
+  final ValueNotifier<List<Map<String, dynamic>>> warnings = ValueNotifier([]);
   final ValueNotifier<String?> errorMessage = ValueNotifier(null);
   final ValueNotifier<DateTime?> lastUpdated = ValueNotifier(null);
 
@@ -277,6 +278,64 @@ class FeederApiService {
     }
   }
 
+  /// Get system warnings (hardware/config issues)
+  Future<List<Map<String, dynamic>>> getWarnings() async {
+    if (_baseUrl == null) return [];
+
+    try {
+      final response = await _client
+          .get(Uri.parse('$_baseUrl/api/warnings'))
+          .timeout(kApiTimeout);
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final warningsList = (json['warnings'] as List? ?? []).cast<Map<String, dynamic>>();
+        warnings.value = warningsList;
+        return warningsList;
+      }
+      return [];
+    } catch (e) {
+      debugPrint('FeederApiService: Get warnings error: $e');
+      return [];
+    }
+  }
+
+  /// Toggle detection on/off
+  Future<bool?> toggleDetection() async {
+    if (_baseUrl == null) return null;
+    try {
+      final response = await _client
+          .post(Uri.parse('$_baseUrl/api/control/detection'))
+          .timeout(kApiTimeout);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return json['enabled'] as bool?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('FeederApiService: Toggle detection error: $e');
+      return null;
+    }
+  }
+
+  /// Reset individual bird database on the device
+  Future<bool> resetDatabase() async {
+    if (_baseUrl == null) return false;
+    try {
+      final response = await _client
+          .post(Uri.parse('$_baseUrl/api/control/reset_db'))
+          .timeout(kApiTimeout);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return json['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('FeederApiService: Reset DB error: $e');
+      return false;
+    }
+  }
+
   /// Refresh all data
   Future<void> refreshAll() async {
     try {
@@ -286,6 +345,7 @@ class FeederApiService {
         getIndividuals(),
         getRecentDetections(),
         getTrainingStatus(),
+        getWarnings(),
       ]);
       lastUpdated.value = DateTime.now();
     } catch (e) {
@@ -337,6 +397,7 @@ class FeederApiService {
     individuals.value = [];
     recentDetections.value = [];
     trainingStatus.value = null;
+    warnings.value = [];
     errorMessage.value = null;
     lastUpdated.value = null;
   }
@@ -352,6 +413,7 @@ class FeederApiService {
     individuals.dispose();
     recentDetections.dispose();
     trainingStatus.dispose();
+    warnings.dispose();
     errorMessage.dispose();
     lastUpdated.dispose();
   }
