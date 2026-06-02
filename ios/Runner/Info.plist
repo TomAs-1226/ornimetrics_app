@@ -62,5 +62,14 @@
 			<string>fetch</string>
 			<string>remote-notification</string>
 		</array>
+		<!-- The feeder is a LAN device reached over plain HTTP; allow local
+		     cleartext networking while keeping ATS on for the public internet. -->
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsLocalNetworking</key>
+			<true/>
+		</dict>
+		<key>NSLocalNetworkUsageDescription</key>
+		<string>Ornimetrics connects to your feeder on your local network to show live bird detections.</string>
 	</dict>
 </plist>

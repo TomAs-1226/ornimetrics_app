@@ -32,7 +32,7 @@ class MockFoodLevelProvider implements FoodLevelProvider {
   Stream<FoodLevelReading> watchLevels() {
     double current = startPercent.clamp(0, 100);
     _ticker?.cancel();
-    _ticker = Stream.periodic(tick, (_) => _).listen((_) {
+    _ticker = Stream.periodic(tick, (i) => i).listen((i) {
       current = max(0, current - drainPerTick);
       _controller.add(FoodLevelReading(percentFull: current, timestamp: DateTime.now()));
       if (current <= 0) {

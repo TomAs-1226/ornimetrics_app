@@ -34,6 +34,7 @@ class NotificationsService {
 
   static const int _foodNotificationId = 4444;
   static const int _alertNotificationId = 4445;
+  static const int _welfareNotificationId = 4446;
 
   Future<void> load() async {
     await _ensurePlugin();
@@ -279,5 +280,31 @@ class NotificationsService {
       iOS: const DarwinNotificationDetails(),
     );
     await _plugin.show(_alertNotificationId, title, message, details);
+  }
+
+  /// Surface a feeder welfare screening flag as a local notification.
+  /// Called from the SSE `welfare_alert` push. Uses its own channel so users
+  /// can manage these independently of maintenance alerts.
+  Future<void> showWelfareAlert({
+    required String title,
+    required String body,
+  }) async {
+    await _ensurePlugin();
+    if (!_pluginReady) return;
+    final android = const AndroidNotificationDetails(
+      'feeder_welfare',
+      'Bird welfare alerts',
+      channelDescription:
+          'Screening flags when a bird at your feeder may need a closer look.',
+      importance: Importance.high,
+      priority: Priority.high,
+      styleInformation: BigTextStyleInformation(''),
+      category: AndroidNotificationCategory.status,
+    );
+    final details = NotificationDetails(
+      android: android,
+      iOS: const DarwinNotificationDetails(),
+    );
+    await _plugin.show(_welfareNotificationId, title, body, details);
   }
 }
